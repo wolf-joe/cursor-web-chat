@@ -1,0 +1,48 @@
+{
+  "folders": [
+    {
+      "name": "cursor-web-chat",
+      "cwd": "/path/to/cursor-web-chat",
+      "pinned": true
+    },
+    {
+      "name": "other-project",
+      "cwd": "/path/to/other-project"
+    }
+  ],
+  "llm": {
+    "baseUrl": "http://127.0.0.1:4001/v1",
+    "apiKey": "",
+    "model": "deepseek/deepseek-v4-flash"
+  },
+  "tts": {
+    "enabled": false,
+    "baseUrl": "http://127.0.0.1:4001/v1",
+    "apiKey": "",
+    "model": "mimo/mimo-v2.5-tts",
+    "voice": "冰糖"
+  },
+  "models": {
+    "allowed": [
+      "composer-2.5",
+      "grok-4.5",
+      "claude-opus-5",
+      "claude-sonnet-5",
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+      "kimi-k3",
+      "glm-5.2"
+    ],
+    "default": {
+      "id": "grok-4.5",
+      "params": [
+        { "id": "effort", "value": "high" },
+        { "id": "fast", "value": "false" }
+      ]
+    }
+  },
+  "fileBrowser": {
+    "allowParentTree": false
+  }
+}

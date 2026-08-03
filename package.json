@@ -1,0 +1,30 @@
+{
+  "name": "cursor-web-chat",
+  "version": "0.1.0",
+  "private": false,
+  "license": "MIT",
+  "description": "Self-hosted web UI for the Cursor TypeScript SDK (local runtime)",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --import tsx --watch src/server.ts",
+    "start": "node --env-file-if-exists=.env --import tsx src/server.ts",
+    "wecom": "node --env-file-if-exists=.env --import tsx src/wecom/main.ts",
+    "typecheck": "tsc --noEmit",
+    "postinstall": "node scripts/patch-sdk.mjs"
+  },
+  "dependencies": {
+    "@cursor/sdk": "1.0.26",
+    "express": "^4.21.2",
+    "ws": "^8.21.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

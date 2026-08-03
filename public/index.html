@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<!-- 决策·page-title-server-hostname: 由 server.ts 在出站时替换为本机 hostname -->
+<title>__SERVER_HOSTNAME__ - Cursor</title>
+<link rel="icon" href="/cursor-favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#f7f7f4">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="WebChat">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Ubuntu+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<!-- 决策·highlight-cdn: highlight.js 11.11.1 + github 浅色主题;common 包已含 py/js/ts/md -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
+</head>
+<body>
+
+<div class="app">
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-header-title">
+        <img class="sidebar-header-icon" src="/cursor-favicon.svg" alt="" width="14" height="14">
+        Folders
+      </span>
+      <button class="sidebar-add-btn" id="addFolderBtn" title="添加文件夹">+</button>
+    </div>
+    <div class="add-folder-form" id="addFolderForm">
+      <input type="text" id="addFolderPath" placeholder="文件夹路径,例如 ~/git/xxx">
+      <input type="text" id="addFolderName" placeholder="显示名称(留空则取路径最后一段)">
+      <div class="add-folder-actions">
+        <button id="addFolderSubmit">添加</button>
+        <button id="addFolderCancel" class="secondary">取消</button>
+      </div>
+      <div class="add-folder-error" id="addFolderError"></div>
+    </div>
+    <div id="folderList" class="folder-list">
+      <div class="loading">加载中…</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="chat-header" id="chatHeader">
+      <button class="menu-toggle" id="menuToggle" aria-label="展开侧边栏">&#9776;</button>
+      <div class="chat-title">
+        <div class="chat-title-folder" id="chatTitleFolder">
+          <img class="chat-title-folder-icon" src="/cursor-favicon.svg" alt="" width="14" height="14">
+          <span class="chat-title-folder-text" id="chatTitleFolderText">选择或新建一个会话</span>
+          <button type="button" class="git-btn" id="gitDirtyBtn" hidden aria-label="打开 git Overlay">git</button>
+        </div>
+        <div class="chat-title-agent" id="chatTitleAgent"></div>
+      </div>
+      <span class="agent-status" id="agentStatus"></span>
+      <div class="header-menu">
+        <button class="header-menu-btn" id="headerMenuBtn" aria-label="更多操作" disabled>&#8942;</button>
+        <div class="dropdown-menu" id="headerDropdown">
+          <div class="dropdown-item" id="headerNewConversation">+ 新建会话</div>
+          <div class="dropdown-item" id="headerRename">重命名会话</div>
+          <div class="dropdown-item" id="headerUndo">撤销上一轮</div>
+          <div class="dropdown-item" id="headerRefresh">刷新</div>
+          <div class="dropdown-item" id="headerTtsSettings">设置</div>
+          <div class="dropdown-item danger" id="headerDelete">删除会话</div>
+        </div>
+      </div>
+    </div>
+    <div class="chat-log" id="chatLog">
+      <div class="empty">从左侧选择文件夹,点击「+ 新建会话」或已有会话开始</div>
+    </div>
+    <div class="model-bar" id="modelBar">
+      <select id="modelSelect" title="模型"></select>
+      <button id="modelParamsBtn" class="model-params-btn" title="模型参数设置" type="button">&#9881;</button>
+      <span id="modelParamsSummary" class="model-params-summary"></span>
+      <button id="browseFolderBtn" class="browse-folder-btn" title="浏览文件夹" type="button" disabled>浏览</button>
+    </div>
+    <div class="composer">
+      <div class="composer-body">
+        <div id="composerImagePreview" class="composer-image-preview" hidden>
+          <img id="composerImageThumb" alt="待发送图片" />
+          <button type="button" id="composerImageClear" class="composer-image-clear" title="移除图片" aria-label="移除图片">&times;</button>
+        </div>
+        <textarea id="composerInput" placeholder="给 AI 发消息…" rows="1" disabled></textarea>
+      </div>
+      <input type="file" id="composerImageInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+      <button type="button" id="composerImageBtn" class="composer-image-btn" title="添加图片" aria-label="添加图片" disabled>+</button>
+      <button id="sendBtn" disabled>发送</button>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="modelParamsModalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <span>模型参数</span>
+      <button class="modal-close" id="modelParamsModalClose" type="button" aria-label="关闭">&times;</button>
+    </div>
+    <div class="modal-body" id="modelParamsModalBody"></div>
+  </div>
+</div>
+
+<!-- 决策·two-toggles / 决策·send-key: 用户级设置(localStorage);入口见 headerTtsSettings -->
+<div class="modal-overlay" id="ttsSettingsModalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <span>设置</span>
+      <button class="modal-close" id="ttsSettingsModalClose" type="button" aria-label="关闭">&times;</button>
+    </div>
+    <div class="modal-body">
+      <fieldset class="settings-fieldset">
+        <legend class="settings-fieldset-legend">发送快捷键</legend>
+        <label class="settings-toggle">
+          <input type="radio" name="sendKey" id="sendKeyEnter" value="enter">
+          <span class="settings-toggle-text">
+            <span class="settings-toggle-title">Enter 发送</span>
+            <span class="settings-toggle-desc">Shift+Enter 换行；桌面默认</span>
+          </span>
+        </label>
+        <label class="settings-toggle">
+          <input type="radio" name="sendKey" id="sendKeyCtrlEnter" value="ctrlEnter">
+          <span class="settings-toggle-text">
+            <span class="settings-toggle-title">Ctrl/⌘+Enter 发送</span>
+            <span class="settings-toggle-desc">Enter 换行；触控端默认</span>
+          </span>
+        </label>
+      </fieldset>
+      <fieldset class="settings-fieldset" id="ttsSettingsFieldset">
+        <legend class="settings-fieldset-legend">TTS</legend>
+        <label class="settings-toggle">
+          <input type="checkbox" id="ttsAutoToggle">
+          <span class="settings-toggle-text">
+            <span class="settings-toggle-title">结束后自动朗读</span>
+            <span class="settings-toggle-desc">本轮正常结束后自动播放末条回复</span>
+          </span>
+        </label>
+        <label class="settings-toggle">
+          <input type="checkbox" id="ttsKeepAwakeToggle">
+          <span class="settings-toggle-text">
+            <span class="settings-toggle-title">播放时保持常亮</span>
+            <span class="settings-toggle-desc">朗读期间尽量不让屏幕熄灭（需浏览器支持）</span>
+          </span>
+        </label>
+      </fieldset>
+    </div>
+  </div>
+</div>
+
+<!-- 决策·overlay-shell: 近全宽 Overlay 看未提交 diff;不复用 380px 参数 modal -->
+<div class="diff-overlay" id="diffOverlay" hidden>
+  <div class="diff-panel" role="dialog" aria-modal="true" aria-label="Git 工作区">
+    <div class="diff-panel-header">
+      <!-- 决策·header-branch-only: 顶栏不展示文件夹名,只留分支 + 提交/刷新/关闭,给移动端腾横向空间 -->
+      <div class="diff-panel-title" id="diffOverlayTitle">
+        <span class="diff-panel-branch" id="diffOverlayBranch" hidden></span>
+      </div>
+      <div class="diff-panel-actions">
+        <button type="button" class="diff-pull-btn" id="diffOverlayPull" hidden title="快进拉取远程更新">拉取</button>
+        <button type="button" class="diff-commit-btn" id="diffOverlayCommit" title="提交并推送当前未提交改动">提交并推送</button>
+        <button type="button" class="diff-refresh-btn" id="diffOverlayRefresh" title="刷新">刷新</button>
+        <button type="button" class="modal-close" id="diffOverlayClose" aria-label="关闭">&times;</button>
+      </div>
+    </div>
+    <div class="diff-panel-banner" id="diffOverlayBanner" hidden></div>
+    <div class="diff-panel-body">
+      <aside class="diff-file-list" id="diffFileList" aria-label="改动文件列表"></aside>
+      <section class="diff-content" id="diffContent" aria-label="文件 diff"></section>
+    </div>
+  </div>
+</div>
+
+<!-- 决策·one-shot-modal: 确认弹窗一锤子 commit+push;z-index 高于 diff Overlay -->
+<div class="modal-overlay commit-modal-overlay" id="commitModalOverlay">
+  <div class="modal commit-modal" role="dialog" aria-modal="true" aria-labelledby="commitModalTitle">
+    <div class="modal-header">
+      <span id="commitModalTitle">提交并推送</span>
+      <button class="modal-close" id="commitModalClose" type="button" aria-label="关闭">&times;</button>
+    </div>
+    <div class="modal-body" id="commitModalBody">
+      <p class="commit-modal-summary" id="commitModalSummary"></p>
+      <p class="commit-modal-hint">将执行 <code>git add -A</code>（含未跟踪文件与删除），然后 commit 并 push 到当前分支上游。内容以确认时工作区为准。</p>
+      <label class="commit-modal-label" for="commitMessageInput">Commit message</label>
+      <textarea id="commitMessageInput" class="commit-message-input" rows="3" placeholder="生成中…"></textarea>
+      <p class="commit-modal-draft-hint" id="commitDraftHint" hidden></p>
+      <div class="commit-modal-result" id="commitModalResult" hidden></div>
+      <div class="commit-modal-actions">
+        <button type="button" class="secondary" id="commitModalCancel">取消</button>
+        <button type="button" id="commitModalSubmit" disabled>提交并推送</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 决策·undo-confirm-copy: 撤销前展示上一轮用户原文,便于复制后再确认 -->
+<div class="modal-overlay undo-modal-overlay" id="undoModalOverlay">
+  <div class="modal undo-modal" role="dialog" aria-modal="true" aria-labelledby="undoModalTitle">
+    <div class="modal-header">
+      <span id="undoModalTitle">撤销上一轮</span>
+      <button class="modal-close" id="undoModalClose" type="button" aria-label="关闭">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="commit-modal-summary">将删除你发出的这句话和 AI 的回复，且 AI 之后也不会再记得——此操作不可撤销。</p>
+      <p class="commit-modal-hint">下方是上一轮你的原文，可先选中复制再确认撤销。</p>
+      <label class="commit-modal-label" for="undoUserTextInput">上一轮输入</label>
+      <textarea id="undoUserTextInput" class="undo-user-text-input" rows="6" readonly placeholder="（未找到上一轮用户输入）"></textarea>
+      <div class="commit-modal-actions">
+        <button type="button" class="secondary" id="undoModalCancel">取消</button>
+        <button type="button" class="danger" id="undoModalConfirm">确认撤销</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 决策·independent-overlay / 决策·overlay-shell / 决策·refresh-ux /
+     决策·header-search-ui:
+     独立近全宽文件浏览 Overlay;顶栏搜索框回车搜相对路径;关后再开即整树重拉;与 diff 互斥 -->
+<div class="diff-overlay file-browser-overlay" id="fileBrowserOverlay" hidden>
+  <div class="diff-panel" role="dialog" aria-modal="true" aria-labelledby="fileBrowserTitle">
+    <div class="diff-panel-header">
+      <div class="diff-panel-title" id="fileBrowserTitle">
+        <span id="fileBrowserFolder">浏览文件夹</span>
+      </div>
+      <input type="search" class="fb-search-input" id="fileBrowserSearch" placeholder="搜索相对路径…" autocomplete="off" spellcheck="false" aria-label="按相对路径搜索文件" />
+      <div class="diff-panel-actions">
+        <button type="button" class="modal-close" id="fileBrowserClose" aria-label="关闭">&times;</button>
+      </div>
+    </div>
+    <div class="diff-panel-banner" id="fileBrowserBanner" hidden></div>
+    <div class="diff-panel-body">
+      <aside class="diff-file-list file-browser-tree" id="fileBrowserTree" aria-label="文件树"></aside>
+      <section class="file-browser-preview-pane" aria-label="文件预览">
+        <div class="file-browser-preview-toolbar">
+          <span class="file-browser-preview-path" id="fileBrowserPreviewPath"></span>
+          <button type="button" class="file-browser-insert-btn" id="fileBrowserInsertBtn" disabled title="将路径插入输入框">插入 @路径</button>
+        </div>
+        <div class="diff-content file-browser-preview" id="fileBrowserPreview">
+          <div class="diff-content-empty">选择左侧文件预览</div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
