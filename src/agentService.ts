@@ -144,7 +144,7 @@ async function admitToCache(agentId: string, agent: SDKAgent, cwd: string): Prom
 
 // 决策·no-auth-fallback / 决策·lease-age-log: 不在 auth 失败后再 flush;
 // 每次 send 检查 cwd 租约年龄,仅超龄时 warn 并丢掉空闲句柄,逼 SDK 换新 executor。
-// 健康路径不打 info(见 docs/proposals/20260723.log-density.md)。
+// 健康路径不打 info(见 plan/20260723.log-density.md)。
 async function maybeFlushStaleExecutorLease(cwd: string): Promise<void> {
   const firstLeaseAt = cwdFirstLeaseAt.get(cwd);
   const ageMs = firstLeaseAt !== undefined ? Date.now() - firstLeaseAt : 0;
