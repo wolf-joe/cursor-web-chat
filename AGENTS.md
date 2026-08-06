@@ -20,7 +20,7 @@
 - `npm run start` —— 单次启动,不带 watch
 - `npm run wecom -- --cwd <path>` —— 企微智能机器人桥接(独立进程,HTTP 调本服务);需 `WECOM_BOT_ID`/`WECOM_SECRET`,详见 `plan/20260801.wecom-bot-bridge.md`
 - `npm run typecheck` —— `tsc --noEmit`;这是仓库里唯一的自动化检查(没有测试套件,没有 lint 配置)
-- `npm install` 后会跑 `postinstall: node scripts/patch-sdk.mjs`,对 `@cursor/sdk` 定点注入补丁——**不要跳过**,否则工具调用可能永久卡 RUNNING(见下「SDK 补丁」)
+- `npm install` 后会跑 `postinstall: node scripts/patch-sdk.mjs`,对 `@cursor/sdk` 定点注入补丁——**不要跳过**,否则工具调用可能永久卡 RUNNING 或没有终态(见下「SDK 补丁」)
 - 必须有 `CURSOR_API_KEY`——缺失时服务启动即退出。`npm run dev/start` 与 Supervisor command 都用 `node --env-file-if-exists=.env` 从仓库根 `.env` 加载;**不要**把密钥写进 Supervisor `environment` / 期望态定义。
 - **部署信息在 `deploy/`**:`supervisor.ini` 是 Supervisor program 模板(自行改 `directory=` / 日志路径 / `PORT` 等),`install-supervisor.sh` 负责安装(只替换本机 node 路径,不注入密钥)。
 - **本机 `config.json`**(仓库根目录,不进 git;模板见 `config.example.json`)管 `folders` 白名单,以及可选的 `llm` / `tts` / `models` / `fileBrowser`。新机器:复制 example 后按本机改;字段以 example 与 `src/config.ts` 为准,勿在此复述。
@@ -40,7 +40,7 @@
 
 ## SDK 补丁
 
-本仓库用 `scripts/patch-sdk.mjs` 对 `@cursor/sdk@1.0.26` 定点注入补丁(stall 吞 completion、Shell cwd)。已知根因与升级判断:见 `docs/cursor_sdk_patches.md`。
+本仓库用 `scripts/patch-sdk.mjs` 对 `@cursor/sdk@1.0.26` 定点注入补丁(stall 吞 completion、Shell cwd、team repos fail closed)。已知根因与升级判断:见 `docs/cursor_sdk_patches.md`。注入只改磁盘,须重启服务才生效。
 
 ## 架构
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * 决策·regex-inject-patch / 决策·patch-scope-1-2:
- * 对 @cursor/sdk@1.0.26 的 dist/esm 与 dist/cjs 定点注入 patch 1 + patch 2。
- * 任一条失配必须非零退出(静默跳过会让工具调用永久卡 RUNNING / Shell cwd 错绑)。
+ * 决策·regex-inject-patch / 决策·patch3-fail-open:
+ * 对 @cursor/sdk@1.0.26 的 dist/esm 与 dist/cjs 定点注入 patch 1 + patch 2 + patch 3。
+ * 任一条失配必须非零退出(静默跳过会让工具调用永久卡 RUNNING / Shell cwd 错绑 /
+ * dashboard 抖动时整段 5 分钟内所有 Grep 类工具调用无终态)。
  * 打过补丁后对应「未修补」正则天然不再命中,以此作幂等判据。
- * 不注入 patch 3(team repos)。
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -44,6 +44,15 @@ if (pkg.version !== "1.0.26") {
   fail(`期望 @cursor/sdk@1.0.26,实际 ${pkg.version};拒绝在未知版本上静默注入`);
 }
 
+// patch 3 的锚点(rejection 处理这半段)在 esm/cjs 压缩后同形,TTL 变量名不在锚点内。
+const teamReposFailOpen = (tag) => ({
+  name: `patch3-team-repos-fail-open (${tag})`,
+  pristine:
+    "const t=this.teamReposPromise;return t.catch((e=>{throw this.teamReposPromise===t&&(this.teamReposPromise=void 0),e}))",
+  patched:
+    "const t=this.teamReposPromise;return t.catch((e=>{this.teamReposPromise===t&&(this.teamReposPromise=void 0)}))",
+});
+
 /** @type {{ file: string, patches: { name: string, pristine: string, patched: string }[] }[]} */
 const TARGETS = [
   {
@@ -68,6 +77,7 @@ const TARGETS = [
         patched:
           'const a0=this.terminalExecutor??(0,p.createDefaultTerminalExecutor)({env:{CURSOR_AGENT:"1"},userTerminalHint:this.userTerminalHint});let c;if(this.workspacePaths.length>1){const e=this.workspacePaths.map((e=>(0,o.dirname)(e)));c=e.every((t=>t===e[0]))?e[0]:void 0}else c=t;const a="string"==typeof c&&c?a0.clone(c):a0;let u=new Bi(a,',
       },
+      teamReposFailOpen("esm"),
     ],
   },
   {
@@ -92,6 +102,7 @@ const TARGETS = [
         patched:
           'const o0=this.terminalExecutor??(0,io.createDefaultTerminalExecutor)({env:{CURSOR_AGENT:"1"},userTerminalHint:this.userTerminalHint});let l;if(this.workspacePaths.length>1){const e=this.workspacePaths.map((e=>(0,a.dirname)(e)));l=e.every((t=>t===e[0]))?e[0]:void 0}else l=t;const o="string"==typeof l&&l?o0.clone(l):o0;let c=new Sv(o,',
       },
+      teamReposFailOpen("cjs"),
     ],
   },
 ];
