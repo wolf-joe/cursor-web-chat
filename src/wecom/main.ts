@@ -110,8 +110,6 @@ function main(): void {
   const api = new ChatApiClient(cfg.baseUrl);
   const bridge = new WecomBridge({ cwd: cfg.cwd, baseUrl: cfg.baseUrl, ws, api });
   bridge.attach();
-  // 断线不续刷旧 req_id;主服务 run 继续。
-  ws.setDisconnectHandler(() => bridge.onWsDisconnected());
   ws.start();
 
   const shutdown = () => {

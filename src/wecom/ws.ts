@@ -40,7 +40,6 @@ export class WecomWsClient {
   private stopped = false;
   private subscribed = false;
   private onMessage: MsgHandler | null = null;
-  private onDisconnect: (() => void) | null = null;
   // 决策·ws-generation: 重连后旧连接上的迟到回调/定时器不得再发帧。
   private generation = 0;
   private pendingSubscribeReqId: string | null = null;
@@ -54,10 +53,6 @@ export class WecomWsClient {
 
   setMessageHandler(handler: MsgHandler): void {
     this.onMessage = handler;
-  }
-
-  setDisconnectHandler(handler: () => void): void {
-    this.onDisconnect = handler;
   }
 
   start(): void {
@@ -80,7 +75,9 @@ export class WecomWsClient {
   }
 
   /**
-   * 决策·wecom-stream: aibot_respond_msg;同 req_id + stream.id 全量替换。
+   * 决策·stream-progress-markdown-final: 过程用 stream 气泡,同 stream.id 全量替换。
+   * 自首帧起 10 分钟内必须 finish,超时企微自动结束该气泡(决策·stream-rollover 靠换
+   * stream.id 续窗)。
    */
   respondStream(opts: {
     reqId: string;
@@ -93,11 +90,22 @@ export class WecomWsClient {
       headers: { req_id: opts.reqId },
       body: {
         msgtype: "stream",
-        stream: {
-          id: opts.streamId,
-          finish: opts.finish,
-          content: opts.content,
-        },
+        stream: { id: opts.streamId, finish: opts.finish, content: opts.content },
+      },
+    });
+  }
+
+  /**
+   * 正文终稿。同一 req_id 可连发多条(实测),每条是独立气泡。
+   * content 超 20480 字节会被服务端整条拒收(errcode 40058),分片责任在调用方。
+   */
+  respondMarkdown(opts: { reqId: string; content: string }): boolean {
+    return this.send({
+      cmd: "aibot_respond_msg",
+      headers: { req_id: opts.reqId },
+      body: {
+        msgtype: "markdown",
+        markdown: { content: opts.content },
       },
     });
   }
@@ -135,18 +143,12 @@ export class WecomWsClient {
     ws.on("close", (code, reasonBuf) => {
       if (gen !== this.generation) return;
       const reason = reasonBuf?.toString() || undefined;
-      const wasSubscribed = this.subscribed;
       this.subscribed = false;
       this.clearPing();
       if (this.ws === ws) this.ws = null;
       log.warn("企微长连接:已断开", { code, reason });
-      if (wasSubscribed) {
-        try {
-          this.onDisconnect?.();
-        } catch (err) {
-          log.error("企微断线回调失败", err);
-        }
-      }
+      // 决策·reqid-across-reconnect: 断线不需要放弃本轮,重连后旧 req_id 仍可回复,
+      // 未送出的关键消息由 ReplyChannel 的重试队列补发。
       this.scheduleReconnect(gen);
     });
 

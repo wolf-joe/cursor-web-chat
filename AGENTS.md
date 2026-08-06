@@ -18,7 +18,7 @@
 
 - `npm run dev` —— 用 `tsx watch` 启动(`src/` 改动自动重启)
 - `npm run start` —— 单次启动,不带 watch
-- `npm run wecom -- --cwd <path>` —— 企微智能机器人桥接(独立进程,HTTP 调本服务);需 `WECOM_BOT_ID`/`WECOM_SECRET`,详见 `plan/20260801.wecom-bot-bridge.md`
+- `npm run wecom -- --cwd <path>` —— 企微智能机器人桥接(独立进程,HTTP 调本服务);需 `WECOM_BOT_ID`/`WECOM_SECRET`,详见 `plan/20260801.wecom-bot-bridge.md` 与输出层的 `plan/20260806.wecom-markdown-output.md`。**同一个 bot 只允许一条长连接**:本机跑着 Supervisor 的 `cursor-wecom` 时,另起桥接或跑 `scripts/wecom-contract-check.mjs` 会互相顶掉 subscribe,须先 `supervisorctl stop cursor-wecom`
 - `npm run typecheck` —— `tsc --noEmit`;这是仓库里唯一的自动化检查(没有测试套件,没有 lint 配置)
 - `npm install` 后会跑 `postinstall: node scripts/patch-sdk.mjs`,对 `@cursor/sdk` 定点注入补丁——**不要跳过**,否则工具调用可能永久卡 RUNNING 或没有终态(见下「SDK 补丁」)
 - 必须有 `CURSOR_API_KEY`——缺失时服务启动即退出。`npm run dev/start` 与 Supervisor command 都用 `node --env-file-if-exists=.env` 从仓库根 `.env` 加载;**不要**把密钥写进 Supervisor `environment` / 期望态定义。
@@ -56,7 +56,7 @@
 8. **文件浏览**(`src/fileBrowser.ts`)—— 懒加载列目录 + 文本预览;路径经 realpath 默认禁锢在 cwd 内(`fileBrowser.allowParentTree` 可放开到父目录树);前端把 `@绝对路径` **纯文本**插入 composer,不碰 SDK 附件能力。
 9. **TTS**(`src/ttsService.ts`)—— 按需且默认关闭:抽该 run 末条 assistant 正文 → llm 口语化 → TTS 流式 pcm → 原子落盘 `data/tts/<runId>.wav`。缓存键=`runId`;undo 末轮 / delete agent 必须同步删对应音频。
 10. **结构化日志**(`src/logger.ts`)—— 全链路关键节点共用,排查时优先看这里而不是临时 `console.log`。
-11. **企微桥接**(`src/wecom/`)—— 独立进程:长连接收单聊 → `POST /api/chat` + SSE → `aibot_respond_msg` 单气泡节流回推;指令 `new`/`stop`。配了 `AUTH_TOKEN` 时自动带 Cookie。不改 agent 主循环。
+11. **企微桥接**(`src/wecom/`)—— 独立进程:长连接收单聊 → `POST /api/chat` + SSE → `aibot_respond_msg` 回推,**过程与正文分两种 msgtype**:过程是一条 `stream` 气泡原地刷新(3 秒一帧、只追加不改写、满页或近 10 分钟窗时换 `stream.id` 续),正文在 run 结束时作为 `markdown` 终稿(超 20480 字节按**字节**分片);指令 `new`/`stop`。分轨的原因是二者诉求相反:企微对 stream 是固定速率逐字动画(几千字的正文会滞后几十秒),而 markdown 无动画但不能原地刷新(高频进度会刷屏)。详见 `plan/20260806.wecom-markdown-output.md`。配了 `AUTH_TOKEN` 时自动带 Cookie。不改 agent 主循环。
 
 ### 改动前要了解的数据流
 
@@ -83,6 +83,7 @@
 | assistant 按需 TTS | `ttsService` + `public/ttsPlayer.js` | `plan/20260718.assistant-tts.md` |
 | TTS / 发送快捷键等用户设置 | `public/userSettings.js` + `ttsPlayer` Wake Lock | `plan/20260718.tts-user-settings.md` |
 | 企微智能机器人单聊桥接 | `src/wecom/`(独立进程) | `plan/20260801.wecom-bot-bridge.md` |
+| 企微输出:stream 进度气泡 + markdown 终稿 | `progressBubble` + `replyChannel` + `transcript` | `plan/20260806.wecom-markdown-output.md`(输出层已翻盘 20260801 的四条决策) |
 | 开源净化与发布 | — | `plan/20260803.open-source-release.md` |
 
 截断上限、音色、UI 文案等易变数字以代码里 `决策·` 与对应 plan §5 为准,不要在本文件另存一份。
