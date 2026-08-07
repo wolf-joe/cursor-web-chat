@@ -201,7 +201,9 @@ export class WecomBridge {
         }
         return;
       }
-      if (type === "assistant") reply.applyEvent(event);
+      // 决策·reply-interrupt: 非 assistant 也要喂给 ReplyAccumulator,否则 lastWasText
+      // 永不复位,工具前后两段正文会被 += 粘死(标题变成「……。## 结论」)。
+      reply.applyEvent(event);
       if (type === "thinking" || type === "tool_call") digest.applyEvent(event);
     });
 

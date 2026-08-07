@@ -158,6 +158,7 @@ export class ReplyAccumulator {
   private segments: string[] = [];
   private lastWasText = false;
 
+  /** 调用方须把非 assistant 事件也传进来,用来打断连续文本(见 bridge 决策·reply-interrupt)。 */
   applyEvent(event: Record<string, unknown>): void {
     if (event.type !== "assistant") {
       this.lastWasText = false;
