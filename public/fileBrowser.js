@@ -4,11 +4,13 @@
 // 决策·refresh-ux / 决策·browse-enabled / 决策·highlight-cdn /
 // 决策·md-preview-msg-text / 决策·flat-results / 决策·search-on-enter /
 // 决策·clear-restores-tree / 决策·empty-query-resets /
-// 决策·esc-clears-search-first / 决策·header-search-ui:
+// 决策·esc-clears-search-first / 决策·header-search-ui /
+// 决策·image-preview-a-plus / 决策·image-preview-ui / 决策·image-preview-onerror /
+// 决策·image-preview-no-insert-change:
 // 独立近全宽 Overlay 懒加载浏览 cwd 文件树、只读预览,并把 ` @绝对路径 `
 // 插进 composer 光标处后关闭 Overlay。顶栏回车按相对路径子串搜,左栏切扁列表;
 // 清空/空白回树根。打开/关闭不 detachStream;与 diff Overlay 互斥;无刷新按钮——
-// 关后再开即整树重拉。MD 预览复用 `.msg-text`。
+// 关后再开即整树重拉。MD 预览复用 `.msg-text`。合格位图走 read 元信息 + <img src=raw>。
 import {
   browseFolderBtn,
   fileBrowserOverlay,
@@ -70,6 +72,22 @@ function renderPreviewEmpty(msg = "选择左侧文件预览") {
 
 function renderPreviewSkipped(message) {
   fileBrowserPreview.innerHTML = `<div class="diff-content-skipped">${escapeHtml(message || "已跳过")}</div>`;
+}
+
+/** 决策·image-preview-ui / 决策·image-preview-onerror / 决策·image-preview-a-plus */
+function renderPreviewImage(url, filePath) {
+  fileBrowserPreview.innerHTML = "";
+  const wrap = document.createElement("div");
+  wrap.className = "fb-image-preview";
+  const img = document.createElement("img");
+  img.src = url;
+  img.alt = filePath || "预览图片";
+  img.addEventListener("error", () => {
+    // 决策·image-preview-onerror: <img> 吃不到 raw 的 JSON body,笼统提示即可。
+    renderPreviewSkipped("无法加载图片");
+  });
+  wrap.appendChild(img);
+  fileBrowserPreview.appendChild(wrap);
 }
 
 function renderPreviewContent(filePath, content, language) {
@@ -350,6 +368,11 @@ async function selectFile(filePath) {
     }
     if (data.skipped) {
       renderPreviewSkipped(data.skipped.message || "已跳过");
+      return;
+    }
+    // 决策·image-preview-a-plus: 合格位图无 content,用 url 加载 raw。
+    if (data.kind === "image" && data.url) {
+      renderPreviewImage(data.url, filePath);
       return;
     }
     if (data.content == null) {

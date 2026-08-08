@@ -1,5 +1,5 @@
-// 决策·cookie-token: 鉴权用 cookie 承载 token——SSE / TTS 音频 / 用户图片三类
-// 浏览器原生加载无法带自定义 Authorization header;cookie 是唯一能同时覆盖三者的载体。
+// 决策·cookie-token: 鉴权用 cookie 承载 token——SSE / TTS 音频 / 用户图片 / fs raw
+// 四类浏览器原生加载无法带自定义 Authorization header;cookie 是唯一能同时覆盖的载体。
 // 不引 cookie-parser,手写解析十几行即可。
 import crypto from "node:crypto";
 import type { NextFunction, Request, Response } from "express";

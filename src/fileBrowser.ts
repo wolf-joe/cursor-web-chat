@@ -1,19 +1,24 @@
 // 决策·cwd-allowlist / 决策·path-confine / 决策·hide-dot / 决策·lazy-tree /
 // 决策·truncation / 决策·list-cap / 决策·abs-path / 决策·preview-langs /
+// 决策·image-preview-a-plus / 决策·image-preview-exts / 决策·image-preview-max-bytes /
+// 决策·image-preview-secure-raw / 决策·image-preview-langs-amend /
 // 决策·sync-walk / 决策·match-relpath / 决策·files-only / 决策·depth-semantics /
 // 决策·search-caps / 决策·skip-bad-nodes / 决策·symlink-mark / 决策·fs-scope-tighten:
-// 只读列目录 / 读文本预览 / 相对路径子串搜索。cwd 须经 server 白名单;目标路径
-// realpath 后默认必须落在 cwd 内;config.fileBrowser.allowParentTree=true 时放宽到
-// cwd 的父目录树(含兄弟包,便于 monorepo 外链)。不返回点开头项;单目录最多 500 条;
-// 预览硬上限:超过 2000 行或超过 200KB 都不回正文,只标 skipped。对外路径一律绝对路径。
+// 只读列目录 / 读文本预览 / 常见位图缩略图元信息 / 相对路径子串搜索。cwd 须经
+// server 白名单;目标路径 realpath 后默认必须落在 cwd 内;config.fileBrowser.allowParentTree=true
+// 时放宽到 cwd 的父目录树(含兄弟包,便于 monorepo 外链)。不返回点开头项;单目录最多 500 条;
+// 文本预览硬上限:超过 2000 行或超过 200KB 都不回正文,只标 skipped;常见位图另走
+// read 元信息 + /api/fs/raw(独立 5MB 上限)。对外路径一律绝对路径。
 // 软链接: type 为解析后真实类型,另带 symlink/linkTarget 供前端名后加 @。
 import fs from "node:fs/promises";
 import path from "node:path";
 import { loadFileBrowserAllowParentTree } from "./config.js";
 
 const MAX_CONTENT_LINES = 2000;
-/** 预览体积上限:超过则不读入、不展示。 */
+/** 文本预览体积上限:超过则不读入、不展示。 */
 const MAX_PREVIEW_BYTES = 200 * 1024;
+/** 决策·image-preview-max-bytes: 图片预览独立上限。 */
+const MAX_IMAGE_PREVIEW_BYTES = 5 * 1024 * 1024;
 const MAX_LIST_ENTRIES = 500;
 
 /** 决策·search-caps */
@@ -56,6 +61,27 @@ export interface FsReadResult {
   language: string | null;
   skipped: FsSkipped | null;
   truncated: boolean;
+  /** 决策·image-preview-a-plus: 仅合格位图预览时有 */
+  kind?: "image";
+  mimeType?: string;
+  /** 指向 GET /api/fs/raw 的同源 URL */
+  url?: string;
+}
+
+/** raw 拒绝:非禁锢类错误(禁锢仍抛 PathConfineError)。 */
+export class FsRawRejectError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "FsRawRejectError";
+    this.status = status;
+  }
+}
+
+export interface FsImageRawResult {
+  absPath: string;
+  mimeType: string;
 }
 
 /** 决策·search-caps: 全局停止原因(深度只限制下行,不单独作为全局 stop) */
@@ -82,20 +108,31 @@ const SKIP_MESSAGES = {
   binary: "二进制或图片文件，不展示内容",
   too_many_lines: `超过 ${MAX_CONTENT_LINES} 行，不展示内容`,
   too_large_bytes: `超过 ${Math.round(MAX_PREVIEW_BYTES / 1024)}KB，不展示内容`,
+  too_large_image: `超过 ${Math.round(MAX_IMAGE_PREVIEW_BYTES / 1024 / 1024)}MB，不展示图片`,
   error: "无法读取文件",
 } as const;
 
-const IMAGE_EXTS = new Set([
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".webp",
-  ".ico",
-  ".svg",
-  ".bmp",
-  ".avif",
-]);
+/** 决策·image-preview-exts: 可缩略图预览的常见位图。 */
+const PREVIEW_IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
+
+/** 仍当二进制跳过、不当文本读的图像类扩展名。 */
+const NON_PREVIEW_IMAGE_EXTS = new Set([".ico", ".svg", ".bmp", ".avif"]);
+
+const PREVIEW_IMAGE_MIME: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+};
+
+function mimeForPreviewImage(ext: string): string {
+  return PREVIEW_IMAGE_MIME[ext] ?? "application/octet-stream";
+}
+
+function buildImageRawUrl(cwd: string, absPath: string): string {
+  return `/api/fs/raw?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(absPath)}`;
+}
 
 const LANG_BY_EXT: Record<string, string> = {
   ".py": "python",
@@ -257,7 +294,8 @@ export async function listDirectory(cwd: string, dirPath?: string): Promise<FsLi
   return { path: abs, entries, truncated };
 }
 
-/** 决策·truncation / 决策·preview-langs / 决策·abs-path */
+/** 决策·truncation / 决策·preview-langs / 决策·image-preview-a-plus /
+ * 决策·image-preview-exts / 决策·image-preview-max-bytes / 决策·abs-path */
 export async function readTextFile(cwd: string, filePath: string): Promise<FsReadResult> {
   const abs = await resolveWithinCwd(cwd, filePath);
   const base: FsReadResult = {
@@ -269,7 +307,39 @@ export async function readTextFile(cwd: string, filePath: string): Promise<FsRea
   };
 
   const ext = path.extname(abs).toLowerCase();
-  if (IMAGE_EXTS.has(ext)) {
+  if (PREVIEW_IMAGE_EXTS.has(ext)) {
+    let st;
+    try {
+      st = await fs.stat(abs);
+    } catch {
+      return {
+        ...base,
+        skipped: { reason: "error", message: SKIP_MESSAGES.error },
+      };
+    }
+    if (!st.isFile()) {
+      return {
+        ...base,
+        skipped: { reason: "error", message: "目标不是普通文件" },
+      };
+    }
+    if (st.size > MAX_IMAGE_PREVIEW_BYTES) {
+      return {
+        ...base,
+        skipped: { reason: "too_large", message: SKIP_MESSAGES.too_large_image },
+      };
+    }
+    return {
+      ...base,
+      content: null,
+      skipped: null,
+      kind: "image",
+      mimeType: mimeForPreviewImage(ext),
+      url: buildImageRawUrl(cwd, abs),
+    };
+  }
+
+  if (NON_PREVIEW_IMAGE_EXTS.has(ext)) {
     return {
       ...base,
       skipped: { reason: "binary", message: SKIP_MESSAGES.binary },
@@ -331,6 +401,33 @@ export async function readTextFile(cwd: string, filePath: string): Promise<FsRea
     skipped: null,
     truncated: false,
   };
+}
+
+/**
+ * 决策·image-preview-secure-raw / 决策·image-preview-exts / 决策·image-preview-max-bytes:
+ * 供 GET /api/fs/raw:禁锢后仅允许可预览位图且 ≤5MB,返回绝对路径与 MIME。
+ */
+export async function resolveImageRaw(cwd: string, filePath: string): Promise<FsImageRawResult> {
+  const abs = await resolveWithinCwd(cwd, filePath);
+  const ext = path.extname(abs).toLowerCase();
+  if (!PREVIEW_IMAGE_EXTS.has(ext)) {
+    throw new FsRawRejectError(400, "不支持的图片类型");
+  }
+
+  let st;
+  try {
+    st = await fs.stat(abs);
+  } catch {
+    throw new FsRawRejectError(404, SKIP_MESSAGES.error);
+  }
+  if (!st.isFile()) {
+    throw new FsRawRejectError(400, "目标不是普通文件");
+  }
+  if (st.size > MAX_IMAGE_PREVIEW_BYTES) {
+    throw new FsRawRejectError(413, SKIP_MESSAGES.too_large_image);
+  }
+
+  return { absPath: abs, mimeType: mimeForPreviewImage(ext) };
 }
 
 /**

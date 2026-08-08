@@ -37,7 +37,7 @@ import { generateCommitMessage } from "./commitMessageService.js";
 import { commitAndPush, GitCommitBusyError } from "./gitCommit.js";
 import { pullFfOnly } from "./gitPull.js";
 import { GitWriteBusyError } from "./gitWriteLock.js";
-import { listDirectory, readTextFile, searchFiles, PathConfineError } from "./fileBrowser.js";
+import { listDirectory, readTextFile, resolveImageRaw, searchFiles, PathConfineError, FsRawRejectError } from "./fileBrowser.js";
 import {
   deleteTtsCache,
   deleteTtsCaches,
@@ -408,8 +408,8 @@ app.get("/api/fs/list", async (req, res) => {
   }
 });
 
-// 决策·truncation / 决策·path-confine / 决策·preview-langs:
-// 只读文本预览;超限/二进制标 skipped,不回正文。
+// 决策·truncation / 决策·path-confine / 决策·preview-langs / 决策·image-preview-a-plus:
+// 只读文本预览或位图元信息;超限/二进制标 skipped;合格图片给 kind+url,字节走 /api/fs/raw。
 app.get("/api/fs/read", async (req, res) => {
   const cwd = req.query.cwd as string | undefined;
   const filePath = req.query.path as string | undefined;
@@ -431,6 +431,39 @@ app.get("/api/fs/read", async (req, res) => {
       return;
     }
     log.error("读文件失败", err, { cwd, path: filePath });
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// 决策·image-preview-secure-raw / 决策·image-preview-exts / 决策·image-preview-max-bytes:
+// 位图字节出口;禁锢+扩展名白名单+5MB;供 <img> 同源加载(cookie 鉴权)。
+app.get("/api/fs/raw", async (req, res) => {
+  const cwd = req.query.cwd as string | undefined;
+  const filePath = req.query.path as string | undefined;
+  const deny = assertAllowedCwd(cwd);
+  if (deny) {
+    res.status(deny.startsWith("缺少") ? 400 : 403).json({ error: deny });
+    return;
+  }
+  if (!filePath) {
+    res.status(400).json({ error: "缺少 path 参数" });
+    return;
+  }
+  try {
+    const { absPath, mimeType } = await resolveImageRaw(cwd!, filePath);
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Cache-Control", "private, no-cache");
+    res.sendFile(absPath);
+  } catch (err) {
+    if (err instanceof PathConfineError) {
+      res.status(403).json({ error: err.message });
+      return;
+    }
+    if (err instanceof FsRawRejectError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    log.error("读图片失败", err, { cwd, path: filePath });
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
