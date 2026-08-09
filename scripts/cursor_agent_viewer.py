@@ -124,7 +124,7 @@ def collect_all() -> list[dict]:
                     conn = sqlite3.connect(str(db))
                     conn.row_factory = sqlite3.Row
                     for row in conn.execute(
-                        "SELECT agent_id, name, status, created_at, updated_at FROM agents ORDER BY created_at"
+                        "SELECT agent_id, name, status, created_at, updated_at FROM agents"
                     ):
                         # 统计 turns
                         turns = list(conn.execute(
@@ -138,6 +138,7 @@ def collect_all() -> list[dict]:
                             "name": row["name"],
                             "status": row["status"],
                             "created_at": row["created_at"],
+                            "updated_at": row["updated_at"],
                             "source": "sdk",
                             "turns": [],
                             "transcript_path": None,
@@ -194,16 +195,22 @@ def collect_all() -> list[dict]:
                                                 break
                 except Exception:
                     pass
+                mtime = jsonl_path.stat().st_mtime
+                mtime_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime))
                 agents.append({
                     "agent_id": session_id,
                     "name": title,
                     "status": "N/A",
-                    "created_at": None,
+                    "created_at": mtime_iso,
+                    "updated_at": mtime_iso,
                     "source": "ide",
                     "turns": [],
                     "transcript_path": str(jsonl_path),
                     "turn_count": turn_count,
                 })
+
+        # 决策·newest-first: 文件夹内会话按最近活动时间倒序，最新在上。
+        agents.sort(key=lambda a: a.get("updated_at") or a.get("created_at") or "", reverse=True)
 
         results.append({
             "workspace": workspace,
@@ -299,7 +306,12 @@ def api_agent_detail(agent_id: str):
 
                     # 获取用户消息并插入到每个 turn 的开头
                     workspace = resolve_workspace(d)
-                    user_msgs = _get_user_messages_sdk(agent_id, workspace)
+                    try:
+                        user_msgs = _get_user_messages_sdk(agent_id, workspace)
+                    except Exception as e:
+                        return jsonify({
+                            "error": f"获取 User message 失败: {e}",
+                        }), 500
                     for turn in turns:
                         user_text = user_msgs.get(turn["turn"] - 1, "")
                         if user_text:
@@ -433,6 +445,7 @@ def _get_user_messages_sdk(agent_id: str, workspace: str) -> dict[int, str]:
     """通过 SDK 获取 agent 的用户消息。
 
     返回: {turn_index: user_text}
+    依赖缺失或 SDK 调用失败时直接抛错，由 API 层返回给前端展示。
     """
     # 检查缓存
     now = time.time()
@@ -444,28 +457,31 @@ def _get_user_messages_sdk(agent_id: str, workspace: str) -> dict[int, str]:
 
     try:
         from cursor_sdk import Agent, CursorClient
+    except ImportError as e:
+        raise RuntimeError(
+            "缺少 Python 依赖 cursor_sdk，无法读取 User message。"
+            "请安装 cursor_sdk 后再打开 SDK 会话。"
+        ) from e
 
-        with CursorClient.launch_bridge(workspace=workspace) as client:
-            agent = client.resume_agent(agent_id)
-            msgs = agent.list_messages()
-            result = {}
-            for m in msgs:
-                if m.type == "user" and m.message:
-                    turn_data = m.message.get("turn", {})
-                    if turn_data.get("case") == "agentConversationTurn":
-                        user_msg = turn_data.get("value", {}).get("userMessage", {})
-                        text = user_msg.get("text", "")
-                        # uuid 格式: agent-id:turn_index
-                        uuid = m.uuid
-                        if ":" in uuid:
-                            turn_idx = int(uuid.split(":")[-1])
-                            result[turn_idx] = text
+    with CursorClient.launch_bridge(workspace=workspace) as client:
+        agent = client.resume_agent(agent_id)
+        msgs = agent.list_messages()
+        result = {}
+        for m in msgs:
+            if m.type == "user" and m.message:
+                turn_data = m.message.get("turn", {})
+                if turn_data.get("case") == "agentConversationTurn":
+                    user_msg = turn_data.get("value", {}).get("userMessage", {})
+                    text = user_msg.get("text", "")
+                    # uuid 格式: agent-id:turn_index
+                    uuid = m.uuid
+                    if ":" in uuid:
+                        turn_idx = int(uuid.split(":")[-1])
+                        result[turn_idx] = text
 
-        # 更新缓存
-        _USER_MSG_CACHE[cache_key] = {"timestamp": now, "messages": result}
-        return result
-    except Exception:
-        return {}
+    # 更新缓存
+    _USER_MSG_CACHE[cache_key] = {"timestamp": now, "messages": result}
+    return result
 
 
 # ── API ──
@@ -640,9 +656,15 @@ async function selectAgent(agentId, name, item) {
   main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
 
   const res = await fetch(`/api/agent/${agentId}`);
-  const data = await res.json();
-  if (data.error) {
-    main.innerHTML = `<div class="empty">${data.error}</div>`;
+  let data;
+  try {
+    data = await res.json();
+  } catch (e) {
+    main.innerHTML = `<div class="empty">请求失败 (HTTP ${res.status})</div>`;
+    return;
+  }
+  if (!res.ok || data.error) {
+    main.innerHTML = `<div class="empty">${escapeHtml(data.error || `请求失败 (HTTP ${res.status})`)}</div>`;
     return;
   }
   currentAgent = data;

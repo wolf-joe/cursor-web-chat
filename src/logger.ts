@@ -9,7 +9,7 @@ function formatContext(ctx?: Record<string, unknown>): string {
   return ` ${JSON.stringify(ctx)}`;
 }
 
-export function previewText(text: string, maxLen = 80): string {
+export function previewText(text: string, maxLen = 2000): string {
   const oneLine = text.replace(/\s+/g, " ").trim();
   if (oneLine.length <= maxLen) return oneLine;
   return `${oneLine.slice(0, maxLen)}…`;
