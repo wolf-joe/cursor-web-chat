@@ -6,6 +6,8 @@ import {
   appendRunMeta,
   appendToolBlock,
   updateToolBlockEl,
+  appendCreatePlanBubble,
+  updateCreatePlanBubbleEl,
   appendThinkingBlock,
   appendThinkingDelta,
   appendStatusLine,
@@ -13,10 +15,12 @@ import {
   buildCollapsedGroupEl,
   renderHistory,
   renderMarkdown,
+  scrollChatToBottom,
   setComposerEnabled,
   showPendingIndicator,
   clearPendingIndicator,
 } from "./render.js";
+import { isCreatePlanTool } from "./toolFormat.js";
 import { hydrateMermaid } from "./mermaidHydrate.js";
 import { loadFolders, currentFolder, renderFolders } from "./sidebar.js";
 import { refreshGitDirty } from "./gitStatus.js";
@@ -105,6 +109,22 @@ function breakThinkingAccumulator() {
 }
 
 function updateToolBlock(callId, { name, status, args, result }) {
+  // 决策·createplan-as-assistant: 计划走气泡并作为 meta 挂载点。
+  if (isCreatePlanTool(name)) {
+    const el = liveToolBlocks.get(callId);
+    if (!el) {
+      const created = appendCreatePlanBubble({ args, status });
+      liveToolBlocks.set(callId, created);
+      currentTurnUnits.push(created);
+      lastAssistantBubbleEl = created;
+      // 与 assistant 正文一致:新气泡出现时贴底一次。
+      scrollChatToBottom({ force: true });
+      return;
+    }
+    updateCreatePlanBubbleEl(el, { args, status });
+    lastAssistantBubbleEl = el;
+    return;
+  }
   const el = liveToolBlocks.get(callId);
   if (!el) {
     const created = appendToolBlock({ name, status, args, result });
@@ -178,7 +198,20 @@ function handleStreamEvent(event, { agentId, cwd }) {
         else if (block.type === "tool_use") {
           breakAssistantAccumulator();
           breakThinkingAccumulator();
-          currentTurnUnits.push(appendToolBlock({ name: block.name, status: "running", args: block.input }));
+          // 决策·createplan-as-assistant: assistant 事件里的 tool_use 也走计划气泡。
+          if (isCreatePlanTool(block.name)) {
+            const el = appendCreatePlanBubble({
+              args: block.input,
+              status: "running",
+            });
+            currentTurnUnits.push(el);
+            lastAssistantBubbleEl = el;
+            scrollChatToBottom({ force: true });
+          } else {
+            currentTurnUnits.push(
+              appendToolBlock({ name: block.name, status: "running", args: block.input }),
+            );
+          }
         }
       }
       break;

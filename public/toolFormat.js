@@ -1,10 +1,12 @@
 // 决策·tool-format-module / 决策·four-tools / 决策·glob-format / 决策·summary-shape /
 // 决策·cwd-in-summarize / 决策·beautify-depth / 决策·edit-shape / 决策·truncate /
-// 决策·createplan-md / 决策·md-no-cycle / 决策·createplan-shape:
+// 决策·createplan-shape / 决策·md-no-cycle:
 // 工具折叠条人话摘要 + 展开详情 HTML。纯函数模块，不碰 DOM 装配。
 // args/result 视为 unknown，每类分支防御式取值，失败退回 JSON。
-// createPlan 详情用 markdown；不得 import render.js（循环依赖）。
-// glob：args.globPattern + 可选 targetDirectory；result.value.files / totalFiles。
+// createPlan 主路径已改走 render.js 计划气泡（决策·createplan-as-assistant）；
+// 此处 createPlan 分支仅兜底（若仍误入 .block-tool）。
+// 不得 import render.js（循环依赖）；glob：args.globPattern + 可选 targetDirectory；
+// result.value.files / totalFiles。
 
 import { state } from "./state.js";
 
@@ -185,7 +187,7 @@ function renderCreatePlanDetail(args, result) {
   return `<div class="msg-text tool-plan-md">${renderPlanMarkdown(args.plan)}</div>`;
 }
 
-/** 是否 createPlan（决策·createplan-default-open 由 render 侧开合）。 */
+/** 是否 createPlan（决策·createplan-as-assistant 由 render/stream 走气泡）。 */
 export function isCreatePlanTool(name) {
   return normalizeName(name) === "createplan";
 }

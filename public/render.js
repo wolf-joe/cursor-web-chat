@@ -245,21 +245,78 @@ export function appendThinkingDelta(el, text) {
   body.textContent = (body.textContent || "") + (text ?? "");
 }
 
+// 决策·createplan-as-assistant: createPlan 常是本轮主产出(甚至唯一应答),
+// 不再走 .block-tool 折叠卡——渲染成类 assistant 气泡,可挂 run meta;
+// 角色旁加 CreatePlan 标记。畸形 args 退回 JSON,不白屏。
+function createPlanBodyHtml(args) {
+  if (args && typeof args === "object" && typeof args.plan === "string") {
+    return renderMarkdown(args.plan);
+  }
+  if (args == null) return "";
+  return `<pre class="msg-plan-fallback">${escapeHtml(safeStringify(args))}</pre>`;
+}
+
+function createPlanStatusHtml(status) {
+  if (status === "running") return `<span class="msg-plan-status running">生成中…</span>`;
+  if (status === "error") return `<span class="msg-plan-status error">error</span>`;
+  return "";
+}
+
+export function appendCreatePlanBubble({ args, status }, container = chatLogEl) {
+  const el = document.createElement("div");
+  el.className = "msg assistant msg-createplan";
+  // 决策·createplan-no-tts: TTS 只抽 assistantMessage 正文,计划气泡挂控件会空读。
+  el.dataset.createPlan = "1";
+  el._createPlanState = { args, status };
+  el.innerHTML = `
+    <div class="msg-header">
+      <span class="msg-role">assistant</span>
+      <span class="msg-plan-badge">CreatePlan</span>
+      ${createPlanStatusHtml(status)}
+    </div>
+    <div class="msg-text">${createPlanBodyHtml(args)}</div>
+  `;
+  const textEl = el.querySelector(".msg-text");
+  container.appendChild(el);
+  void hydrateMermaid(textEl);
+  return el;
+}
+
+export function updateCreatePlanBubbleEl(el, { args, status }) {
+  const prev = el._createPlanState || {};
+  const next = {
+    args: args !== undefined ? args : prev.args,
+    status: status != null ? status : prev.status,
+  };
+  el._createPlanState = next;
+  const header = el.querySelector(".msg-header");
+  if (header) {
+    header.innerHTML = `
+      <span class="msg-role">assistant</span>
+      <span class="msg-plan-badge">CreatePlan</span>
+      ${createPlanStatusHtml(next.status)}
+    `;
+  }
+  const textEl = el.querySelector(".msg-text");
+  if (textEl) {
+    textEl.innerHTML = createPlanBodyHtml(next.args);
+    void hydrateMermaid(textEl);
+  }
+}
+
 // 工具调用:摘要/详情由 toolFormat 产出；DOM 只负责装配与开合（决策·tool-format-module）。
 export function appendToolBlock({ name, status, args, result }, container = chatLogEl) {
   const el = document.createElement("div");
   el.className = "block-tool";
   el._toolState = { name, args, result };
-  // 决策·createplan-default-open: createPlan 非 running 时默认展开。
-  const defaultOpen = isCreatePlanTool(name) && status !== "running";
   el.innerHTML = `
     <div class="tool-header">
       <span class="tool-name">${escapeHtml(name)}</span>
       <span class="tool-preview">${escapeHtml(summarizeTool(name, args, result))}</span>
       <span class="tool-status ${status}">${escapeHtml(status)}</span>
-      <span class="tool-toggle">${defaultOpen ? "折叠" : "展开"}</span>
+      <span class="tool-toggle">展开</span>
     </div>
-    <div class="tool-detail${defaultOpen ? " open" : ""}">
+    <div class="tool-detail">
       ${renderToolDetail(name, args, result)}
     </div>
   `;
@@ -298,12 +355,9 @@ export function updateToolBlockEl(el, { name, status, args, result }) {
   const detail = el.querySelector(".tool-detail");
   const wasOpen = detail.classList.contains("open");
   detail.innerHTML = renderToolDetail(next.name, next.args, next.result);
-  // 决策·createplan-default-open: running→completed 时若此前合着，仍默认撑开。
-  const effectiveStatus = status != null ? status : statusEl?.textContent ?? "";
-  const open = wasOpen || (isCreatePlanTool(next.name) && effectiveStatus !== "running");
-  detail.classList.toggle("open", open);
+  detail.classList.toggle("open", wasOpen);
   const toggle = el.querySelector(".tool-toggle");
-  if (toggle) toggle.textContent = open ? "折叠" : "展开";
+  if (toggle) toggle.textContent = wasOpen ? "折叠" : "展开";
   void hydrateMermaid(detail);
 }
 
@@ -386,20 +440,33 @@ export function renderConversationStep(step, container = chatLogEl) {
     // "completed",导致 result.status === "error" 的调用在历史记录里也被涂成绿色,
     // 看不出曾经失败过。result 缺失(理论上 conversation() 只收纳已终结的调用,不应
     // 发生)时兜底按 completed 展示,不因为防御性判断反而更显眼地报错。
+    const name = step.message?.type ?? "tool";
     const resultStatus = step.message?.result?.status;
+    const status = resultStatus === "error" ? "error" : "completed";
+    // 决策·createplan-as-assistant: 计划走气泡,不进工具卡。
+    if (isCreatePlanTool(name)) {
+      return appendCreatePlanBubble(
+        { args: step.message?.args, status },
+        container,
+      );
+    }
     return appendToolBlock(
-      { name: step.message?.type ?? "tool", status: resultStatus === "error" ? "error" : "completed", args: step.message?.args, result: step.message?.result },
+      { name, status, args: step.message?.args, result: step.message?.result },
       container,
     );
   }
 }
 
-// 返回这批 steps 里最后一条 assistantMessage 对应的 DOM 元素(可能不是 steps
-// 里的最后一项,比如收尾是工具调用),供调用方在其底部挂运行元信息(模型/用量)。
+// 返回这批 steps 里最后一条可挂 meta 的气泡(assistant 正文或 createPlan;
+// 可能不是 steps 末项,比如收尾是普通工具调用),供调用方挂模型/用量。
 export function appendStepsWithCollapse(steps) {
   let lastAssistantEl;
   const track = (step, el) => {
     if (step.type === "assistantMessage") lastAssistantEl = el;
+    // 决策·createplan-as-assistant: createPlan 作为末条主产出时也要挂 meta。
+    else if (step.type === "toolCall" && isCreatePlanTool(step.message?.type)) {
+      lastAssistantEl = el;
+    }
   };
   if (steps.length <= 1) {
     for (const step of steps) track(step, renderConversationStep(step));
@@ -483,7 +550,10 @@ export function renderHistory(data, { scroll = "bottom" } = {}) {
       hasContent = true;
     } else {
       appendRunMeta(lastAssistantEl, run.model, run.usage, run.contextUsage);
-      if (state.ttsEnabled) appendTtsControls(lastAssistantEl, run.runId);
+      // 决策·createplan-no-tts: 计划气泡无 assistantMessage 正文可抽,不挂朗读。
+      if (state.ttsEnabled && lastAssistantEl && !lastAssistantEl.dataset.createPlan) {
+        appendTtsControls(lastAssistantEl, run.runId);
+      }
     }
   }
   if (!hasContent) chatLogEl.innerHTML = '<div class="empty">暂无历史消息</div>';
