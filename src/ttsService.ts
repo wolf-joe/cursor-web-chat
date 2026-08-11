@@ -8,7 +8,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { listAgentRuns } from "./agentService.js";
 import { isTtsEnabled, loadTtsConfig } from "./config.js";
-import { getLlmConfig, isLlmConfigured, llmProxyHeaders, LLM_APP_NAME } from "./llmProxy.js";
+import {
+  getLlmConfig,
+  isLlmConfigured,
+  llmProxyHeaders,
+  LLM_APP_NAME,
+  LLM_SHORT_TASK_THINKING,
+} from "./llmProxy.js";
 import { log, previewText } from "./logger.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -231,9 +237,7 @@ async function* streamRewriteSentences(
     body: JSON.stringify({
       model,
       stream: true,
-      // DeepSeek V4 默认开 thinking：会先吐完 reasoning_content 才有 content，
-      // 首句入队被拖到数秒～十余秒。短任务关掉（同 commitMessageService）。
-      thinking: { type: "disabled" },
+      ...LLM_SHORT_TASK_THINKING,
       messages: [
         { role: "system", content: REWRITE_SYSTEM_PROMPT },
         { role: "user", content: truncateText(text) },

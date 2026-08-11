@@ -10,7 +10,12 @@
 import { getGitDiff } from "./gitDiff.js";
 // commit message 只读本地 diff,不触发 Overlay 的 sync fetch。
 // 决策·llm-config-split: 缺 llm 配置时返回 message:null,不阻塞手填提交。
-import { getLlmConfig, isLlmConfigured, llmProxyHeaders } from "./llmProxy.js";
+import {
+  getLlmConfig,
+  isLlmConfigured,
+  llmProxyHeaders,
+  LLM_SHORT_TASK_THINKING,
+} from "./llmProxy.js";
 import { log, previewText } from "./logger.js";
 
 const TIMEOUT_MS = 15_000;
@@ -96,12 +101,11 @@ async function callLlm(diffText: string): Promise<string | null> {
       headers: llmProxyHeaders(),
       body: JSON.stringify({
         model,
+        ...LLM_SHORT_TASK_THINKING,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: diffText },
         ],
-        // DeepSeek V4 默认开 thinking；短任务偶发把答案写进 reasoning_content、content 为空。
-        thinking: { type: "disabled" },
       }),
       signal: controller.signal,
     });

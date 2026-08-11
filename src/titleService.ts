@@ -1,6 +1,11 @@
 // 决策·title-via-gateway: 新会话标题不走 @cursor/sdk Agent——避免脏写会话历史。
 // 决策·llm-config-split: 缺 llm 配置时回退为用户首句截断,不尝试连网关。
-import { getLlmConfig, isLlmConfigured, llmProxyHeaders } from "./llmProxy.js";
+import {
+  getLlmConfig,
+  isLlmConfigured,
+  llmProxyHeaders,
+  LLM_SHORT_TASK_THINKING,
+} from "./llmProxy.js";
 import { log, previewText } from "./logger.js";
 
 const TIMEOUT_MS = 8000;
@@ -32,6 +37,7 @@ export async function generateTitle(userText: string): Promise<string | null> {
       headers: llmProxyHeaders(),
       body: JSON.stringify({
         model,
+        ...LLM_SHORT_TASK_THINKING,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: userText.slice(0, 2000) },
