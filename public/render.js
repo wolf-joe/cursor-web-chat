@@ -16,6 +16,9 @@ import { state } from "./state.js";
 import { appendTtsControls, stopTtsPlayback } from "./ttsPlayer.js";
 import { summarizeTool, renderToolDetail, isCreatePlanTool } from "./toolFormat.js";
 import { hydrateMermaid } from "./mermaidHydrate.js";
+import { renderMarkdown } from "./markdown.js";
+
+export { renderMarkdown };
 
 // 直播期间不再贴底跟滚。唯一的自动滚动是新 assistant 正文气泡出现时贴底一次
 // (appendMessageBubble(..., "force"))。scrollChatToBottom 另留给打开历史/
@@ -84,13 +87,6 @@ export function escapeHtml(s) {
   const d = document.createElement("div");
   d.textContent = s ?? "";
   return d.innerHTML;
-}
-
-export function renderMarkdown(text) {
-  if (typeof marked !== "undefined") return marked.parse(text ?? "");
-  // marked 从 CDN 加载失败时的兜底:没有 HTML 块级结构,换行符靠 <br> 保留,
-  // 不再依赖容器级 white-space: pre-wrap(那个属性对 marked 输出反而有害,见 style.css)。
-  return escapeHtml(text).replace(/\n/g, "<br>");
 }
 
 export function safeStringify(value) {

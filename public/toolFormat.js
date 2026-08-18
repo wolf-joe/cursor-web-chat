@@ -5,10 +5,12 @@
 // args/result 视为 unknown，每类分支防御式取值，失败退回 JSON。
 // createPlan 主路径已改走 render.js 计划气泡（决策·createplan-as-assistant）；
 // 此处 createPlan 分支仅兜底（若仍误入 .block-tool）。
-// 不得 import render.js（循环依赖）；glob：args.globPattern + 可选 targetDirectory；
+// 不得 import render.js（循环依赖）；markdown 走 markdown.js（决策·ascii-autolink）；
+// glob：args.globPattern + 可选 targetDirectory；
 // result.value.files / totalFiles。
 
 import { state } from "./state.js";
+import { renderMarkdown } from "./markdown.js";
 
 /** 展开区长文本字符上限；超出截断并标注（滚动另由 CSS max-height 管）。 */
 const TEXT_CHAR_LIMIT = 12000;
@@ -173,18 +175,12 @@ function summarizeCreatePlan(args) {
   return oneLine(firstLine || "计划", 120);
 }
 
-/** 与 renderMarkdown 同逻辑的叶子实现，避免 toolFormat ↔ render 循环（决策·md-no-cycle）。 */
-function renderPlanMarkdown(text) {
-  if (typeof marked !== "undefined") return marked.parse(text ?? "");
-  return escapeHtml(text).replace(/\n/g, "<br>");
-}
-
 function renderCreatePlanDetail(args, result) {
   if (!args || typeof args !== "object" || typeof args.plan !== "string") {
     return jsonFallback(args, result);
   }
   // 决策·createplan-md: 详情即 plan 正文 markdown；成功 result 常为空，不单独展示。
-  return `<div class="msg-text tool-plan-md">${renderPlanMarkdown(args.plan)}</div>`;
+  return `<div class="msg-text tool-plan-md">${renderMarkdown(args.plan)}</div>`;
 }
 
 /** 是否 createPlan（决策·createplan-as-assistant 由 render/stream 走气泡）。 */
