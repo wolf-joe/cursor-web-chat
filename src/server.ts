@@ -51,7 +51,7 @@ import {
   deleteUserImages,
   findUserImage,
   isSafeRunId,
-  validateChatImage,
+  prepareChatImage,
   writeUserImage,
 } from "./userImageStore.js";
 import * as runHub from "./runHub.js";
@@ -87,8 +87,8 @@ process.on("uncaughtException", (err) => {
 });
 
 const app = express();
-// 决策·json-body-limit: 覆盖 5MB 图 base64(~6.7MB)+余量;默认 ~100KB 会莫名失败。
-app.use(express.json({ limit: "10mb" }));
+// 决策·json-body-limit: 覆盖 10MB 图 base64(~13.3MB)+余量;默认 ~100KB 会莫名失败。
+app.use(express.json({ limit: "16mb" }));
 // 决策·cookie-token: 配了 AUTH_TOKEN 时保护全部路径,仅白名单登录页与验证接口。
 app.use(createAuthMiddleware());
 
@@ -551,7 +551,7 @@ app.post("/api/chat", async (req, res) => {
     agentId?: string;
     text?: string;
     model?: ModelSelection;
-    // 决策·json-base64 / 决策·max-one-image-5mb: 单张 { mimeType, data },不走 multipart。
+    // 决策·json-base64 / 决策·max-one-image-10mb: 单张 { mimeType, data },不走 multipart。
     image?: { mimeType?: string; data?: string };
   };
 
@@ -570,7 +570,7 @@ app.post("/api/chat", async (req, res) => {
     return;
   }
 
-  let validatedImage: ReturnType<typeof validateChatImage> | undefined;
+  let validatedImage: Awaited<ReturnType<typeof prepareChatImage>> | undefined;
   if (image !== undefined && image !== null) {
     // 决策·vision-allowlist
     if (!modelSupportsVision(resolvedModel.id)) {
@@ -578,7 +578,8 @@ app.post("/api/chat", async (req, res) => {
       return;
     }
     try {
-      validatedImage = validateChatImage(image);
+      // 决策·compress-before-send: 校验 10MB 后、send 前压到 1MB。
+      validatedImage = await prepareChatImage(image);
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
       return;

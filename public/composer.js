@@ -22,9 +22,9 @@ import { highlightActiveAgent, markAgentCachedInSidebar } from "./sidebar.js";
 import { attachToStream } from "./stream.js";
 import { unlockAudio } from "./sound.js";
 
-// 决策·allowed-mime / 决策·max-one-image-5mb(与后端 userImageStore 对齐)
+// 决策·allowed-mime / 决策·max-one-image-10mb(与后端 userImageStore 对齐)
 const ALLOWED_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 /** @type {{ mimeType: string, data: string, previewUrl: string } | null} */
 let pendingImage = null;

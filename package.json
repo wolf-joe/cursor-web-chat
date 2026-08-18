@@ -18,6 +18,7 @@
   "dependencies": {
     "@cursor/sdk": "1.0.26",
     "express": "^4.21.2",
+    "sharp": "^0.35.3",
     "ws": "^8.21.1"
   },
   "devDependencies": {

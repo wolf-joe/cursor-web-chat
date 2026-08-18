@@ -4,12 +4,13 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import sharp from "sharp";
 import { log } from "./logger.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const USER_IMAGES_DIR = path.join(__dirname, "..", "data", "user-images");
 
-// 决策·allowed-mime / 决策·max-one-image-5mb
+// 决策·allowed-mime / 决策·max-one-image-10mb
 export const ALLOWED_IMAGE_MIMES = new Set([
   "image/png",
   "image/jpeg",
@@ -17,7 +18,9 @@ export const ALLOWED_IMAGE_MIMES = new Set([
   "image/gif",
 ]);
 
-export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+// 决策·compress-before-send: 入站仍允许 10MB;send / 旁路落盘前压到 1MB,避免大图卡死 vision。
+export const TARGET_SEND_IMAGE_BYTES = 1024 * 1024;
 
 const MIME_TO_EXT: Record<string, string> = {
   "image/png": "png",
@@ -100,6 +103,73 @@ export function validateChatImage(image: unknown): { mimeType: string; buffer: B
     throw new Error(`图片过大(上限 ${MAX_IMAGE_BYTES / (1024 * 1024)}MB)`);
   }
   return { mimeType, buffer, data: raw };
+}
+
+export type PreparedChatImage = {
+  mimeType: string;
+  buffer: Buffer;
+  data: string;
+};
+
+/**
+ * 校验后若已 ≤1MB 原样返回;否则转 JPEG 并缩小,直到 ≤ TARGET_SEND_IMAGE_BYTES。
+ * 动图只取第一帧。失败抛 Error(文案可直接给 400)。
+ */
+export async function prepareChatImage(image: unknown): Promise<PreparedChatImage> {
+  return compressForSend(validateChatImage(image));
+}
+
+async function compressForSend(img: PreparedChatImage): Promise<PreparedChatImage> {
+  if (img.buffer.length <= TARGET_SEND_IMAGE_BYTES) return img;
+
+  const decodeOpts = { animated: false, failOn: "none" as const, limitInputPixels: 40_000_000 };
+
+  async function encode(maxEdge: number, quality: number): Promise<Buffer> {
+    return sharp(img.buffer, decodeOpts)
+      .rotate()
+      .resize({ width: maxEdge, height: maxEdge, fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality, mozjpeg: true })
+      .toBuffer();
+  }
+
+  let meta: { width?: number; height?: number };
+  try {
+    meta = await sharp(img.buffer, decodeOpts).rotate().metadata();
+  } catch (err) {
+    throw new Error(`图片无法解码(${err instanceof Error ? err.message : String(err)})`);
+  }
+  const srcEdge = Math.max(meta.width ?? 0, meta.height ?? 0);
+  if (srcEdge === 0) throw new Error("图片无法解码");
+
+  let maxEdge = Math.min(srcEdge, 1920);
+  let quality = 80;
+  let out: Buffer;
+  try {
+    out = await encode(maxEdge, quality);
+  } catch (err) {
+    throw new Error(`图片压缩失败(${err instanceof Error ? err.message : String(err)})`);
+  }
+
+  while (out.length > TARGET_SEND_IMAGE_BYTES) {
+    if (quality > 40) {
+      quality -= 10;
+    } else if (maxEdge > 640) {
+      maxEdge = Math.max(640, Math.floor(maxEdge * 0.75));
+      quality = 70;
+    } else {
+      throw new Error("图片压缩后仍超过 1MB");
+    }
+    out = await encode(maxEdge, quality);
+  }
+
+  log.info("上传图已压缩", {
+    fromBytes: img.buffer.length,
+    toBytes: out.length,
+    fromMime: img.mimeType,
+    maxEdge,
+    quality,
+  });
+  return { mimeType: "image/jpeg", buffer: out, data: out.toString("base64") };
 }
 
 /**
