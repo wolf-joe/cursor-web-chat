@@ -1,0 +1,5 @@
+# Copy to apk-dist.local.properties (gitignored). Absolute directory only.
+# When set, assembleDebug also copies the debug APK there (rename via apk.dist.name).
+#
+# apk.dist.dir=/absolute/path/to/output-dir
+# apk.dist.name=cursor-web-chat-debug.apk

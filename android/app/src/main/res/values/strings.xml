@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Cursor Web Chat</string>
+    <string name="menu_origin">服务器地址</string>
+    <string name="menu_reload">刷新</string>
+    <string name="origin_hint">https://webchat.gateway.yooo.ltd</string>
+    <string name="origin_save">保存并打开</string>
+    <string name="origin_cancel">取消</string>
+    <string name="origin_invalid">请填写 http:// 或 https:// 开头的地址，不要用 127.0.0.1（手机访问不到本机回环）。</string>
+    <string name="origin_title">服务 origin</string>
+    <string name="origin_message">WebView 与后续原生请求共用这个地址。可改；改完立刻重新加载。</string>
+    <string name="open_external_failed">没有可打开该链接的浏览器</string>
+</resources>

@@ -5,4 +5,13 @@ dist/
 models-catalog.json
 config.json
 
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/apk-dist.local.properties
+android/.idea/
+android/*.iml
+android/captures/
+
 scripts/__pycache__/

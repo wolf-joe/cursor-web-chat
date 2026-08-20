@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.CwcShell" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">#1a1a1a</item>
+        <item name="colorPrimaryDark">#111111</item>
+        <item name="colorAccent">#2f6fed</item>
+        <item name="android:statusBarColor">#1a1a1a</item>
+        <item name="android:navigationBarColor">#ffffff</item>
+    </style>
+</resources>

@@ -85,6 +85,7 @@
 | 企微智能机器人单聊桥接 | `src/wecom/`(独立进程) | `plan/20260801.wecom-bot-bridge.md` |
 | 企微输出:stream 进度气泡 + markdown 终稿 | `progressBubble` + `replyChannel` + `transcript` | `plan/20260806.wecom-markdown-output.md`(输出层已翻盘 20260801 的四条决策) |
 | 开源净化与发布 | — | `plan/20260803.open-source-release.md` |
+| 安卓薄壳（WebView） | `android/` | `plan/20260820.android-d2-native-shell.md` |
 
 截断上限、音色、UI 文案等易变数字以代码里 `决策·` 与对应 plan §5 为准,不要在本文件另存一份。
 
