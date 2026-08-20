@@ -25,11 +25,12 @@ class SettingsActivity : AppCompatActivity() {
 
         val root = findViewById<LinearLayout>(R.id.settings_root)
         ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
-            val bars = insets.getInsets(
+            val sys = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
             )
-            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            insets
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            v.setPadding(sys.left, sys.top, sys.right, maxOf(sys.bottom, ime.bottom))
+            WindowInsetsCompat.CONSUMED
         }
 
         val toolbar = findViewById<Toolbar>(R.id.settings_toolbar)

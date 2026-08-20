@@ -6,29 +6,37 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import ltd.yooo.cursorwebchat.MainActivity
 import ltd.yooo.cursorwebchat.R
 
 object RunNotifications {
-    const val CHANNEL_WATCH = "run_watch"
+    /** 旧 channel run_watch 是 LOW,系统不允许降级,换 id 才能变成 MIN。 */
+    const val CHANNEL_WATCH = "run_watch_min"
     const val CHANNEL_DONE = "run_done"
     const val ID_ONGOING = 1001
+    private const val CHANNEL_WATCH_LEGACY = "run_watch"
 
     fun ensureChannels(context: Context) {
         if (Build.VERSION.SDK_INT < 26) return
         val nm = context.getSystemService(NotificationManager::class.java)
+        nm.deleteNotificationChannel(CHANNEL_WATCH_LEGACY)
         nm.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_WATCH,
                 context.getString(R.string.notify_channel_watch),
-                NotificationManager.IMPORTANCE_LOW,
+                NotificationManager.IMPORTANCE_MIN,
             ).apply {
                 description = context.getString(R.string.notify_channel_watch_desc)
                 setShowBadge(false)
+                setSound(null, null)
+                enableVibration(false)
             },
         )
         val sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
@@ -55,12 +63,11 @@ object RunNotifications {
         } else {
             context.getString(R.string.notify_watch_text_n, watching)
         }
-        return NotificationCompat.Builder(context, CHANNEL_WATCH)
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle(context.getString(R.string.app_name))
+        return base(context, CHANNEL_WATCH)
             .setContentText(text)
             .setOngoing(true)
             .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .setContentIntent(openApp(context, null))
             .build()
     }
@@ -70,9 +77,7 @@ object RunNotifications {
             "error" -> context.getString(R.string.notify_done_error)
             else -> context.getString(R.string.notify_done_ok)
         }
-        return NotificationCompat.Builder(context, CHANNEL_DONE)
-            .setSmallIcon(android.R.drawable.stat_notify_chat)
-            .setContentTitle(context.getString(R.string.app_name))
+        return base(context, CHANNEL_DONE)
             .setContentText(text)
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
@@ -82,6 +87,20 @@ object RunNotifications {
 
     fun doneId(agentId: String): Int {
         return 2000 + (agentId.hashCode() and 0x0fff)
+    }
+
+    private fun base(context: Context, channel: String): NotificationCompat.Builder {
+        val b = NotificationCompat.Builder(context, channel)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(context.getString(R.string.app_name))
+        appIcon(context)?.let { b.setLargeIcon(it) }
+        return b
+    }
+
+    private fun appIcon(context: Context): Bitmap? {
+        val d = ContextCompat.getDrawable(context, R.mipmap.ic_launcher) ?: return null
+        val px = (48 * context.resources.displayMetrics.density).toInt().coerceAtLeast(96)
+        return d.toBitmap(px, px)
     }
 
     private fun openApp(context: Context, agentId: String?): PendingIntent {

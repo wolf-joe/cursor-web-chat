@@ -48,18 +48,18 @@ class MainActivity : AppCompatActivity() {
         webView = findViewById(R.id.webview)
         val fab = findViewById<ImageButton>(R.id.btn_shell_settings)
         WindowInsetsControllerCompat(window, window.decorView).apply {
-            isAppearanceLightStatusBars = false
+            isAppearanceLightStatusBars = true
             isAppearanceLightNavigationBars = true
         }
         val density = resources.displayMetrics.density
         ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
-            val bars = insets.getInsets(
-                WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.displayCutout(),
+            val sys = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
             )
-            // WebView.setPadding 不会把 HTML 顶出状态栏;给容器留白,网页整块在系统栏下方。
-            v.setPadding(bars.left, bars.top, bars.right, 0)
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            // 容器留白:顶避开状态栏,底避开手势条;IME 起来时底边跟键盘走(edge-to-edge 下 adjustResize 无效)。
+            v.setPadding(sys.left, sys.top, sys.right, maxOf(sys.bottom, ime.bottom))
             fab.updateLayoutParams<FrameLayout.LayoutParams> {
-                // 根布局已避开状态栏,再下移越过网页 .chat-header 右上角三点。
                 topMargin = (56 * density).toInt()
                 marginEnd = (8 * density).toInt()
             }

@@ -12,7 +12,7 @@
     <string name="origin_message">WebView 与后续原生请求共用这个地址。可改；改完立刻重新加载。</string>
     <string name="open_external_failed">没有可打开该链接的浏览器</string>
     <string name="notify_channel_watch">对话进行中</string>
-    <string name="notify_channel_watch_desc">锁屏后保持与服务器的连接。划掉不等于停止生成。</string>
+    <string name="notify_channel_watch_desc">后台保持连接时系统要求的最低常驻条，无声、尽量不占状态栏。划掉不等于停止生成。</string>
     <string name="notify_channel_done">对话结束</string>
     <string name="notify_channel_done_desc">本机发出的一轮结束后提醒。</string>
     <string name="notify_watch_text">正在等待回复</string>
