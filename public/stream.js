@@ -154,7 +154,7 @@ async function refetchConversation(agentId, cwd) {
   // Streaming 结束只换权威历史,不贴底——用户可能正在回看上方内容。
   renderHistory(data, { scroll: "preserve" });
   // 决策·auto-after-refetch / 决策·just-finished-only: 必须在 renderHistory
-  // 之后触发(开头会 stopTtsPlayback);仅正常结束的 finished 轮自动朗读。
+  // 之后触发;仅正常结束的 finished 轮自动朗读。preserve 路径不再无条件停 TTS。
   if (!state.ttsEnabled || !state.userSettings.autoTts) return;
   if (state.currentAgentId !== agentId || state.currentCwd !== cwd) return;
   const lastRun = data.runs?.[data.runs.length - 1];

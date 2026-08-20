@@ -75,6 +75,12 @@
     <div class="chat-log" id="chatLog">
       <div class="empty">从左侧选择文件夹,点击「+ 新建会话」或已有会话开始</div>
     </div>
+    <!-- 决策·tts-mini-bar: 朗读会话进行中(含 loading/暂停)出现在模型条上方 -->
+    <div class="tts-mini-bar" id="ttsMiniBar" hidden>
+      <button type="button" class="tts-mini-stop" id="ttsMiniStopBtn" title="停止朗读" aria-label="停止朗读">停止</button>
+      <button type="button" class="tts-mini-play" id="ttsMiniPlayBtn" title="暂停或继续" aria-label="暂停或继续">❚❚</button>
+      <span class="tts-mini-status" id="ttsMiniStatus"></span>
+    </div>
     <div class="model-bar" id="modelBar">
       <select id="modelSelect" title="模型"></select>
       <button id="modelParamsBtn" class="model-params-btn" title="模型参数设置" type="button">&#9881;</button>

@@ -1,8 +1,18 @@
 // 决策·seek-after-cache: 首播流式 pcm 用 Web Audio(仅播/暂停);
 // 缓存命中后 GET wav + <audio> 可拖动。总时长在拿到 wav metadata 后展示。
 // 决策·wake-lock-lifecycle: Screen Wake Lock 跟播放态走,无 API/拒绝则静默降级。
+// 决策·tts-mini-bar: 朗读会话(loading/streaming/cached,含暂停)在模型条上方出停/暂停;
+// 自然播完与停止收起; Overlay 打开时条抬到其上方。
 import { state } from "./state.js";
 import { ttsAudioUrl } from "./api.js";
+import {
+  ttsMiniBar,
+  ttsMiniStopBtn,
+  ttsMiniPlayBtn,
+  ttsMiniStatus,
+  diffOverlay,
+  fileBrowserOverlay,
+} from "./dom.js";
 
 const SAMPLE_RATE = 24000;
 
@@ -29,6 +39,52 @@ function isActivelyPlaying() {
   if (player.mode === "loading" || player.mode === "streaming") return !player.paused;
   if (player.mode === "cached" && player.audio) return !player.audio.paused;
   return false;
+}
+
+/** 迷你条显隐:点了朗读且尚未 idle/error(含口语化与暂停)。 */
+export function isTtsSessionActive() {
+  if (!player.runId) return false;
+  return player.mode === "loading" || player.mode === "streaming" || player.mode === "cached";
+}
+
+function overlayOpen() {
+  return (
+    (diffOverlay && diffOverlay.classList.contains("open")) ||
+    (fileBrowserOverlay && fileBrowserOverlay.classList.contains("open"))
+  );
+}
+
+function syncMiniBar() {
+  if (!ttsMiniBar) return;
+  const active = isTtsSessionActive();
+  ttsMiniBar.hidden = !active;
+  ttsMiniBar.classList.toggle("over-overlay", active && overlayOpen());
+  if (!active) {
+    if (ttsMiniStatus) ttsMiniStatus.textContent = "";
+    return;
+  }
+  if (ttsMiniPlayBtn) {
+    if (player.mode === "loading") {
+      ttsMiniPlayBtn.textContent = "…";
+      ttsMiniPlayBtn.disabled = true;
+    } else {
+      ttsMiniPlayBtn.disabled = false;
+      const paused =
+        player.mode === "streaming"
+          ? player.paused
+          : !!(player.audio && player.audio.paused);
+      ttsMiniPlayBtn.textContent = paused ? "▶" : "❚❚";
+    }
+  }
+  if (ttsMiniStatus) {
+    if (player.mode === "loading") {
+      ttsMiniStatus.textContent = player.phase === "rewriting" ? "口语化…" : "准备中…";
+    } else if (player.mode === "streaming") {
+      ttsMiniStatus.textContent = player.paused ? "已暂停" : "朗读中…";
+    } else {
+      ttsMiniStatus.textContent = player.audio && player.audio.paused ? "已暂停" : "朗读中…";
+    }
+  }
 }
 
 /** 按设置与播放态申请/释放 Wake Lock(决策·wake-lock-lifecycle)。 */
@@ -143,6 +199,7 @@ function syncControl(runId) {
     setSeekEnabled(runId, false);
     setStatus(runId, "");
     setTimeDisplay(runId, null, known);
+    syncMiniBar();
     return;
   }
   if (player.mode === "loading") {
@@ -183,6 +240,7 @@ function syncControl(runId) {
     setStatus(runId, "");
     setTimeDisplay(runId, null, known);
   }
+  syncMiniBar();
 }
 
 function clearDrainTimer() {
@@ -221,6 +279,7 @@ function stopAll() {
   player.paused = false;
   syncWakeLock();
   if (prev) syncControl(prev);
+  else syncMiniBar();
 }
 
 /** 静默读 wav metadata,拿到总时长后写到控件上(不播放)。 */
@@ -294,9 +353,7 @@ async function playCached(runId) {
   });
   audio.addEventListener("ended", () => {
     if (player.runId !== runId) return;
-    player.paused = true;
-    syncWakeLock();
-    syncControl(runId);
+    finishCachedToIdle(runId);
   });
   audio.addEventListener("error", () => {
     if (player.runId !== runId) return;
@@ -306,6 +363,20 @@ async function playCached(runId) {
     syncControl(runId);
   });
   await audio.play();
+  syncWakeLock();
+  syncControl(runId);
+}
+
+function finishCachedToIdle(runId) {
+  if (player.audio) {
+    player.audio.pause();
+    player.audio.removeAttribute("src");
+    player.audio.load();
+    player.audio = null;
+  }
+  if (player.runId !== runId) return;
+  player.mode = "idle";
+  player.paused = false;
   syncWakeLock();
   syncControl(runId);
 }
@@ -437,6 +508,12 @@ async function startStream(runId) {
 async function startPlay(runId) {
   stopAll();
   player.runId = runId;
+  player.mode = "loading";
+  player.phase = "";
+  player.error = null;
+  player.paused = false;
+  syncWakeLock();
+  syncControl(runId);
 
   const probe = await fetch(ttsAudioUrl(runId), { method: "HEAD" });
   if (probe.ok) {
@@ -546,6 +623,35 @@ export function appendTtsControls(el, runId) {
   probeDuration(runId);
 }
 
+/** 整页重绘气泡后,把当前朗读会话刷回新控件与迷你条(决策·tts-mini-bar)。 */
+export function resyncTtsControls() {
+  if (!player.runId) {
+    syncMiniBar();
+    return;
+  }
+  syncControl(player.runId);
+}
+
 export function stopTtsPlayback() {
   stopAll();
 }
+
+function bindMiniBar() {
+  if (!ttsMiniBar) return;
+  ttsMiniStopBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    stopAll();
+  });
+  ttsMiniPlayBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!player.runId) return;
+    void togglePlay(player.runId);
+  });
+  const overlays = [diffOverlay, fileBrowserOverlay].filter(Boolean);
+  if (overlays.length && typeof MutationObserver !== "undefined") {
+    const obs = new MutationObserver(() => syncMiniBar());
+    for (const el of overlays) obs.observe(el, { attributes: true, attributeFilter: ["class"] });
+  }
+}
+
+bindMiniBar();

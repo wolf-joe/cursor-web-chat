@@ -481,6 +481,51 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   color: var(--red);
 }
 
+/* 决策·tts-mini-bar: 一行停/暂停; Overlay 打开时抬到其上方以免被挡住。 */
+.tts-mini-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.tts-mini-bar[hidden] { display: none; }
+.tts-mini-bar.over-overlay {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 230;
+  padding-bottom: max(6px, env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.12);
+}
+.tts-mini-bar .tts-mini-stop,
+.tts-mini-bar .tts-mini-play {
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+.tts-mini-bar .tts-mini-stop:hover,
+.tts-mini-bar .tts-mini-play:hover { border-color: var(--accent); color: var(--accent); }
+.tts-mini-bar .tts-mini-play:disabled { opacity: 0.45; cursor: not-allowed; }
+.tts-mini-bar .tts-mini-status {
+  min-width: 0;
+  color: var(--text2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .model-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 6px 20px; border-top: 1px solid var(--border); background: var(--surface); font-size: 12px; flex-shrink: 0; }
 .model-bar select { font-family: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); cursor: pointer; }
 .model-bar select:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -860,6 +905,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   .sidebar-backdrop.show { display: block; }
 
   .chat-log { padding: 12px; }
+  .tts-mini-bar { padding: 6px 12px; }
   .composer {
     padding: 10px 12px;
     padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));

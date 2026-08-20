@@ -13,7 +13,7 @@ import {
   headerDeleteEl,
 } from "./dom.js";
 import { state } from "./state.js";
-import { appendTtsControls, stopTtsPlayback } from "./ttsPlayer.js";
+import { appendTtsControls, stopTtsPlayback, isTtsSessionActive, resyncTtsControls } from "./ttsPlayer.js";
 import { summarizeTool, renderToolDetail, isCreatePlanTool } from "./toolFormat.js";
 import { hydrateMermaid } from "./mermaidHydrate.js";
 import { renderMarkdown } from "./markdown.js";
@@ -506,12 +506,15 @@ export function renderFallbackMessage(m) {
 // scroll: "bottom"(默认,打开会话贴底) | "preserve"(Streaming 结束后 refetch,
 // 保持用户当前阅读位置,不贴底)
 export function renderHistory(data, { scroll = "bottom" } = {}) {
-  stopTtsPlayback();
+  // 决策·tts-mini-bar: 同会话 preserve refetch 不停正在播的 run;切会话仍停。
+  const keepTts = scroll === "preserve" && isTtsSessionActive();
+  if (!keepTts) stopTtsPlayback();
   const preservedTop = scroll === "preserve" ? chatLogEl.scrollTop : 0;
   chatLogEl.innerHTML = "";
   if (data.mode === "fallback") {
     for (const m of data.messages) renderFallbackMessage(m);
     if (!data.messages.length) chatLogEl.innerHTML = '<div class="empty">暂无历史消息</div>';
+    if (keepTts) resyncTtsControls();
     if (scroll === "bottom") scrollChatToBottom({ force: true });
     else if (scroll === "preserve") chatLogEl.scrollTop = preservedTop;
     return;
@@ -553,6 +556,7 @@ export function renderHistory(data, { scroll = "bottom" } = {}) {
     }
   }
   if (!hasContent) chatLogEl.innerHTML = '<div class="empty">暂无历史消息</div>';
+  if (keepTts) resyncTtsControls();
   if (scroll === "bottom") scrollChatToBottom({ force: true });
   else if (scroll === "preserve") chatLogEl.scrollTop = preservedTop;
 }
