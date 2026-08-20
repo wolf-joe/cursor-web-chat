@@ -29,6 +29,7 @@ object HttpClient {
 
     /** 登录后探测原生是否带上 cwc_auth；401 只打日志，不打扰 UI。 */
     fun probeAuth(origin: String) {
+        if (origin.isBlank()) return
         val client = okHttp
         val url = "${origin.trimEnd('/')}/api/folders"
         client.newCall(Request.Builder().url(url).get().build()).enqueue(object : okhttp3.Callback {

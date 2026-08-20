@@ -98,6 +98,10 @@ class RunWatchService : Service() {
 
     private fun connect(agentId: String, attempt: Int) {
         val origin = AppSettings.origin(this)
+        if (origin.isEmpty()) {
+            Log.w(TAG, "watch $agentId skipped: empty origin")
+            return
+        }
         val url = "$origin/api/agent/stream?agentId=${java.net.URLEncoder.encode(agentId, "UTF-8")}"
         val req = Request.Builder().url(url).get().build()
         val call = HttpClient.sse.newCall(req)

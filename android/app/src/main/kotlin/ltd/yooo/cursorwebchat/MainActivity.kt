@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Message
+import android.util.Patterns
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.ValueCallback
@@ -132,7 +133,12 @@ class MainActivity : AppCompatActivity() {
                 val dummy = WebView(view.context)
                 dummy.webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
-                        openInBrowser(request.url)
+                        val url = request.url
+                        if (shouldStayInApp(url)) {
+                            view.loadUrl(url.toString())
+                            return true
+                        }
+                        openInBrowser(url)
                         return true
                     }
                 }
@@ -145,7 +151,7 @@ class MainActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url
-                if (isSameOrigin(url)) return false
+                if (shouldStayInApp(url)) return false
                 openInBrowser(url)
                 return true
             }
@@ -254,7 +260,37 @@ class MainActivity : AppCompatActivity() {
         val origin = AppSettings.origin(this)
         pendingClearHistory = loadedOrigin != null && loadedOrigin != origin
         loadedOrigin = origin
+        if (origin.isEmpty()) {
+            startActivity(Intent(this, SettingsActivity::class.java))
+            return
+        }
         webView.loadUrl(origin)
+    }
+
+    // 决策·auth-site-family: Caddy 门户与业务常是兄弟子域;未登录会 302 到门户。
+    // 父域从当前 origin 去掉最左标签推出(webchat.a.b → a.b);IP / 单标签主机只认同源。
+    private fun shouldStayInApp(url: Uri): Boolean {
+        if (isSameOrigin(url)) return true
+        val originHost = Uri.parse(AppSettings.origin(this)).host ?: return false
+        val urlHost = url.host ?: return false
+        val parent = cookieParentDomain(originHost) ?: return false
+        return hostInCookieParent(urlHost, parent)
+    }
+
+    private fun cookieParentDomain(host: String): String? {
+        val h = host.lowercase().trim('.')
+        if (h.isEmpty() || h.contains(':')) return null
+        if (Patterns.IP_ADDRESS.matcher(h).matches()) return null
+        val labels = h.split('.')
+        if (labels.size < 2) return null
+        if (labels.size == 2) return h
+        return labels.drop(1).joinToString(".")
+    }
+
+    private fun hostInCookieParent(host: String, parent: String): Boolean {
+        val h = host.lowercase()
+        val p = parent.lowercase()
+        return h == p || h.endsWith(".$p")
     }
 
     private fun isSameOrigin(url: Uri): Boolean {

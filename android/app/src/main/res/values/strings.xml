@@ -2,7 +2,7 @@
     <string name="app_name">Cursor Web Chat</string>
     <string name="menu_origin">服务器地址</string>
     <string name="menu_reload">刷新</string>
-    <string name="origin_hint">https://webchat.gateway.yooo.ltd</string>
+    <string name="origin_hint" />
     <string name="origin_add">添加到列表</string>
     <string name="origin_add_title">添加地址</string>
     <string name="origin_added">已加入列表</string>

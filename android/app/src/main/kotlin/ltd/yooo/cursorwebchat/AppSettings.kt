@@ -6,17 +6,16 @@ import org.json.JSONArray
 
 /**
  * 决策·server-origin / 决策·url-only: WebView 与 OkHttp 共用当前 origin;
- * 设置页另存规范化 URL 列表。禁止把 127.0.0.1 写进默认值。
+ * 设置页另存规范化 URL 列表。无内置默认主机,新装列表为空,由用户添加。
  */
 object AppSettings {
     private const val PREFS = "cwc_shell"
     private const val KEY_ORIGIN = "server_origin"
     private const val KEY_ORIGINS = "server_origins"
-    const val DEFAULT_ORIGIN = "https://webchat.gateway.yooo.ltd"
 
     fun origin(context: Context): String {
         ensureConsistent(context)
-        return prefs(context).getString(KEY_ORIGIN, DEFAULT_ORIGIN)!!.let { normalize(it) }
+        return prefs(context).getString(KEY_ORIGIN, "")!!.let { normalize(it) }
     }
 
     fun origins(context: Context): List<String> {
@@ -54,14 +53,10 @@ object AppSettings {
         ensureConsistent(context)
         val p = prefs(context)
         val current = origin(context)
-        // 决策·keep-one: 禁止删当前项,列表至少留一条。
+        // 决策·keep-one: 禁止删当前项;一旦有当前项,列表就不会被删空。新装允许列表为空。
         if (target == current) return RemoveOriginResult.IsCurrent
         val list = readList(p).toMutableList()
         if (!list.remove(target)) return RemoveOriginResult.NotFound
-        if (list.isEmpty()) {
-            list.add(DEFAULT_ORIGIN)
-            p.edit().putString(KEY_ORIGIN, DEFAULT_ORIGIN).apply()
-        }
         writeList(p, list)
         return RemoveOriginResult.Ok
     }
@@ -84,15 +79,18 @@ object AppSettings {
         val seed = when {
             !migrated -> null
             fromLegacy.isNotEmpty() && isValidOrigin(fromLegacy) -> fromLegacy
-            else -> DEFAULT_ORIGIN
+            else -> null
         }
-        var list = (existingList ?: listOfNotNull(seed))
+        val list = (existingList ?: listOfNotNull(seed))
             .map { normalize(it) }
             .filter { isValidOrigin(it) }
             .distinct()
-        if (list.isEmpty()) list = listOf(DEFAULT_ORIGIN)
         var current = p.getString(KEY_ORIGIN, null)?.let { normalize(it) }.orEmpty()
-        if (current.isEmpty() || current !in list) current = list.first()
+        current = when {
+            list.isEmpty() -> ""
+            current.isEmpty() || current !in list -> list.first()
+            else -> current
+        }
         if (migrated || existingList != list) writeList(p, list)
         if (p.getString(KEY_ORIGIN, null) != current) {
             p.edit().putString(KEY_ORIGIN, current).apply()

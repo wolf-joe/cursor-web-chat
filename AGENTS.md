@@ -10,6 +10,15 @@
 
 同页还叠了工作区辅助能力(标题栏常驻 git 入口 / dirty 高亮、diff Overlay、commit+push、落后时 ff-only 拉取、文件浏览插入 `@路径`、assistant TTS、run 结束提示音)——都挂在现有 Express API + Overlay UI 上,不另开路由、不碰 agent 主循环协议。
 
+## 公开仓库：勿写入个人痕迹
+
+本仓库会推到 **GitHub 公开库**。凡会进 git 的内容(源码、注释、`决策·`、`plan/`、文档、示例、文案、默认值、提交说明)都按陌生人能搜到写。
+
+- **不要写入**：可识别个人的域名/子域、内网主机名、真实 IP、邮箱、GitHub/社交账号、本机或家用绝对路径、内网与 APK 分发 URL、真实 agent/run id、密钥与 token。
+- **默认值与 hint 保持空或占位**；部署地址从本机配置或用户在设置里填写的当前 origin **推导**,不要硬编码某套网关。Android `applicationId` 已发布则不要为净化去改(改 id 等于新应用),除非用户明确要求。
+- **本机专属**只放已 gitignore 的文件(`.env`、`config.json`、`apk-dist.local.properties` 等)。`deploy/` 模板保持可替换占位,不钉死某台机器。
+- **本文件同样适用**,不要把真实部署写回 AGENTS.md。改完用 `git grep` 扫将要提交的 diff。细节见 `plan/20260803.open-source-release.md`。
+
 ## 关联项目
 
 - **`claude-code-web-chat`**(姊妹项目)—— 用 Claude Code SDK(`@anthropic-ai/claude-agent-sdk`)独立重做的同类前端。**独立仓库、独立部署**,不在本仓库里做双 backend 兼容:两个 SDK 的会话模型不对称(Cursor 是 `Agent`→`Run` 一等对象,Claude Code 是 `Session`→`query` 内 turn,无对等 `Run`)。分工边界见 `docs/sdk-comparison-cursor-vs-claude-code.md`。
