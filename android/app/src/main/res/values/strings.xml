@@ -16,13 +16,7 @@
     <string name="origin_cancel">取消</string>
     <string name="origin_invalid">请填写 http:// 或 https:// 开头的地址，不要用 127.0.0.1（手机访问不到本机回环）。</string>
     <string name="origin_title">服务器列表</string>
-    <string name="origin_message">点一项即切换；WebView 与原生请求共用当前地址。进行中的对话未结束时不能切。正在使用的那一项不能删除。走 HTTP Basic 的站点在添加时填用户名密码，或等弹出登录框。</string>
-    <string name="http_auth_user">HTTP Basic 用户名（可选）</string>
-    <string name="http_auth_pass">HTTP Basic 密码（可选）</string>
-    <string name="http_auth_title">需要登录</string>
-    <string name="http_auth_save">保存该站 Basic</string>
-    <string name="http_auth_saved">已保存 HTTP Basic</string>
-    <string name="http_auth_cleared">已清除该站 HTTP Basic</string>
+    <string name="origin_message">点一项即切换；WebView 与原生请求共用当前地址。进行中的对话未结束时不能切。正在使用的那一项不能删除。</string>
     <string name="open_external_failed">没有可打开该链接的浏览器</string>
     <string name="notify_channel_watch">对话进行中</string>
     <string name="notify_channel_watch_desc">后台保持连接时系统要求的最低常驻条，无声、尽量不占状态栏。划掉不等于停止生成。</string>

@@ -17,8 +17,6 @@ import androidx.core.view.WindowInsetsControllerCompat
 class SettingsActivity : AppCompatActivity() {
     private lateinit var list: LinearLayout
     private lateinit var input: EditText
-    private lateinit var basicUser: EditText
-    private lateinit var basicPass: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,42 +45,19 @@ class SettingsActivity : AppCompatActivity() {
 
         list = findViewById(R.id.origin_list)
         input = findViewById(R.id.origin_input)
-        basicUser = findViewById(R.id.origin_basic_user)
-        basicPass = findViewById(R.id.origin_basic_pass)
         renderList()
-        fillCurrentBasic()
 
         findViewById<Button>(R.id.origin_add).setOnClickListener {
-            val url = input.text.toString()
-            when (AppSettings.addOrigin(this, url)) {
+            when (AppSettings.addOrigin(this, input.text.toString())) {
                 AddOriginResult.Ok -> {
-                    val user = basicUser.text.toString()
-                    val pass = basicPass.text.toString()
-                    if (user.isNotBlank()) {
-                        HttpAuthStore.put(AppSettings.normalize(url), user, pass)
-                    }
                     input.text.clear()
                     Toast.makeText(this, R.string.origin_added, Toast.LENGTH_SHORT).show()
                     renderList()
-                    fillCurrentBasic()
                 }
                 AddOriginResult.Invalid ->
                     Toast.makeText(this, R.string.origin_invalid, Toast.LENGTH_LONG).show()
                 AddOriginResult.Duplicate ->
                     Toast.makeText(this, R.string.origin_duplicate, Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        findViewById<Button>(R.id.http_auth_save).setOnClickListener {
-            val origin = AppSettings.origin(this)
-            val user = basicUser.text.toString()
-            val pass = basicPass.text.toString()
-            if (user.isBlank()) {
-                HttpAuthStore.remove(origin)
-                Toast.makeText(this, R.string.http_auth_cleared, Toast.LENGTH_SHORT).show()
-            } else {
-                HttpAuthStore.put(origin, user, pass)
-                Toast.makeText(this, R.string.http_auth_saved, Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -116,12 +91,6 @@ class SettingsActivity : AppCompatActivity() {
             }
             list.addView(row)
         }
-    }
-
-    private fun fillCurrentBasic() {
-        val creds = HttpAuthStore.get(AppSettings.origin(this))
-        basicUser.setText(creds?.user.orEmpty())
-        basicPass.setText(creds?.pass.orEmpty())
     }
 
     private fun selectOrigin(url: String) {

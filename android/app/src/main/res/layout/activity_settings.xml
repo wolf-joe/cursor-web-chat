@@ -69,39 +69,12 @@
                 android:inputType="textUri"
                 android:singleLine="true" />
 
-            <EditText
-                android:id="@+id/origin_basic_user"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:hint="@string/http_auth_user"
-                android:inputType="text"
-                android:singleLine="true" />
-
-            <EditText
-                android:id="@+id/origin_basic_pass"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:hint="@string/http_auth_pass"
-                android:inputType="textPassword"
-                android:singleLine="true" />
-
             <Button
                 android:id="@+id/origin_add"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:text="@string/origin_add" />
-
-            <Button
-                android:id="@+id/http_auth_save"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:backgroundTint="#e8e8e4"
-                android:text="@string/http_auth_save"
-                android:textColor="#1a1a1a" />
 
             <Button
                 android:id="@+id/page_reload"

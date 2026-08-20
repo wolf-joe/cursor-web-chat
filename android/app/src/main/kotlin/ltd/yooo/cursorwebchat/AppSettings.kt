@@ -63,7 +63,6 @@ object AppSettings {
             p.edit().putString(KEY_ORIGIN, DEFAULT_ORIGIN).apply()
         }
         writeList(p, list)
-        HttpAuthStore.remove(target)
         return RemoveOriginResult.Ok
     }
 
@@ -97,6 +96,10 @@ object AppSettings {
         if (migrated || existingList != list) writeList(p, list)
         if (p.getString(KEY_ORIGIN, null) != current) {
             p.edit().putString(KEY_ORIGIN, current).apply()
+        }
+        if (p.contains("http_basic_by_origin")) {
+            // 旧版曾按 origin 存 Basic 密码;Mac 已改 cookie,启动时清掉残留。
+            p.edit().remove("http_basic_by_origin").apply()
         }
     }
 
