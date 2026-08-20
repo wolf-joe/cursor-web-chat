@@ -11,11 +11,19 @@ object HttpClient {
     lateinit var okHttp: OkHttpClient
         private set
 
+    lateinit var sse: OkHttpClient
+        private set
+
     fun init() {
         okHttp = OkHttpClient.Builder()
             .cookieJar(SharedCookieJar())
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
+            .build()
+        // SSE 必须取消读超时;短探测仍用上面的 30s。
+        sse = okHttp.newBuilder()
+            .readTimeout(0, TimeUnit.MILLISECONDS)
+            .callTimeout(0, TimeUnit.MILLISECONDS)
             .build()
     }
 

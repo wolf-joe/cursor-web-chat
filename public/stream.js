@@ -235,6 +235,8 @@ function handleStreamEvent(event, { agentId, cwd }) {
       if (event.text) appendStatusLine(`[task] ${event.text}`);
       break;
     case "done": {
+      // 原生 RunSession 与页面 EventSource 可能先后各收一次 done;第二次直接丢。
+      if (!state.streaming) break;
       breakAssistantAccumulator();
       breakThinkingAccumulator();
       collapseCurrentTurnMiddle();
@@ -248,9 +250,10 @@ function handleStreamEvent(event, { agentId, cwd }) {
       } else if (event.status === "cancelled") {
         appendStatusLine("[已取消]");
       }
-      // 决策·done-chime: 正常结束/出错时提示一声;用户主动取消不响。
+      // 决策·done-chime: 电脑网页正常结束/出错叮咚;取消不响。
+      // 决策·native-only-done-alert: 壳内有 CwcNative 时不叮咚,只等原生系统通知。
       if (event.status === "finished" || event.status === "error" || event.status === "unknown") {
-        playDoneChime();
+        if (typeof window.CwcNative === "undefined") playDoneChime();
       }
       // 决策·honest-cancelled-ui: finished / unknown / cancelled / error 都 refetch,
       // 与重开会话一致(已推进的取消轮会带状态标与撤销引导;未推进的仍不出现)。
@@ -300,3 +303,11 @@ export function attachToStream(agentId, cwd) {
   currentEventSource = es;
   es.onmessage = (e) => handleStreamEvent(JSON.parse(e.data), { agentId, cwd });
 }
+
+// 壳内锁屏时页面 EventSource 可能冻死;原生 SSE 收到终态后经 evaluateJavascript 回调。
+// 只在仍 streaming 且仍是当前会话时走同一条 done 收尾(含 refetch)。
+window.__cwcOnRunTerminal = (agentId, status) => {
+  if (state.currentAgentId !== agentId) return;
+  if (!state.streaming) return;
+  handleStreamEvent({ type: "done", status: status || "unknown" }, { agentId, cwd: state.currentCwd });
+};

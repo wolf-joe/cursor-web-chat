@@ -136,6 +136,11 @@ export async function sendMessage() {
 
     attached = true;
     attachToStream(data.agentId, state.currentCwd);
+    // 决策·native-watch-own-send: 只把本机发出的这一轮交给壳的 RunSession;
+    // 打开别人已经在跑的 liveRun 只订页面 SSE,不拉前台服务、不弹结束通知。
+    if (typeof window.CwcNative !== "undefined" && window.CwcNative.watchRun) {
+      window.CwcNative.watchRun(data.agentId);
+    }
   } catch (err) {
     appendErrorBanner(err instanceof Error ? err.message : String(err));
   } finally {

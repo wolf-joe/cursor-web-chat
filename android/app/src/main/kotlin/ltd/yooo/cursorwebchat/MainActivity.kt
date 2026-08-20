@@ -1,14 +1,18 @@
 package ltd.yooo.cursorwebchat
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Message
 import android.view.Menu
 import android.view.MenuItem
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -22,11 +26,17 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import ltd.yooo.cursorwebchat.net.HttpClient
+import ltd.yooo.cursorwebchat.run.PendingRunTerminal
+import ltd.yooo.cursorwebchat.run.RunWatchService
+import org.json.JSONObject
+import java.lang.ref.WeakReference
 
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
@@ -34,6 +44,7 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        MainActivityBridge.instance = WeakReference(this)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_main)
 
@@ -72,6 +83,8 @@ class MainActivity : AppCompatActivity() {
             useWideViewPort = true
             loadWithOverviewMode = true
         }
+        // 决策·native-watch-own-send: 只暴露 watch/unwatch;页面发消息后才订原生 SSE。
+        webView.addJavascriptInterface(CwcNativeBridge(), "CwcNative")
         webView.webChromeClient = object : WebChromeClient() {
             override fun onCreateWindow(
                 view: WebView,
@@ -103,6 +116,7 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView, url: String) {
                 CookieManager.getInstance().flush()
                 HttpClient.probeAuth(AppSettings.origin(this@MainActivity))
+                flushPendingTerminal()
             }
         }
         webView.setDownloadListener { url, _, _, _, _ ->
@@ -114,6 +128,8 @@ class MainActivity : AppCompatActivity() {
         } else {
             loadOrigin()
         }
+
+        requestNotificationPermission()
 
         onBackPressedDispatcher.addCallback(
             this,
@@ -135,9 +151,23 @@ class MainActivity : AppCompatActivity() {
         webView.saveState(outState)
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        flushPendingTerminal()
+    }
+
     override fun onResume() {
         super.onResume()
         CookieManager.getInstance().flush()
+        flushPendingTerminal()
+    }
+
+    override fun onDestroy() {
+        if (MainActivityBridge.instance?.get() === this) {
+            MainActivityBridge.instance = null
+        }
+        super.onDestroy()
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -156,6 +186,28 @@ class MainActivity : AppCompatActivity() {
                 true
             }
             else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    fun deliverRunTerminal(agentId: String, status: String) {
+        if (!::webView.isInitialized) return
+        val js =
+            "window.__cwcOnRunTerminal && window.__cwcOnRunTerminal(${JSONObject.quote(agentId)}, ${JSONObject.quote(status)});"
+        webView.evaluateJavascript(js, null)
+    }
+
+    private fun flushPendingTerminal() {
+        val pending = PendingRunTerminal.last ?: return
+        deliverRunTerminal(pending.agentId, pending.status)
+        PendingRunTerminal.last = null
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < 33) return
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIFY)
         }
     }
 
@@ -215,5 +267,28 @@ class MainActivity : AppCompatActivity() {
                 loadOrigin()
             }
             .show()
+    }
+
+    inner class CwcNativeBridge {
+        @JavascriptInterface
+        fun watchRun(agentId: String?) {
+            val id = agentId?.trim().orEmpty()
+            if (id.isEmpty()) return
+            val pending = PendingRunTerminal.last
+            if (pending?.agentId == id) PendingRunTerminal.last = null
+            RunWatchService.watch(this@MainActivity, id)
+        }
+
+        @JavascriptInterface
+        fun unwatchRun(agentId: String?) {
+            val id = agentId?.trim().orEmpty()
+            if (id.isEmpty()) return
+            RunWatchService.unwatch(this@MainActivity, id)
+        }
+    }
+
+    companion object {
+        const val EXTRA_AGENT_ID = "agentId"
+        private const val REQ_NOTIFY = 41
     }
 }

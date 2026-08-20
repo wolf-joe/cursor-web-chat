@@ -288,9 +288,20 @@ app.get("/api/agent/stream", (req, res) => {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
 
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  const clearHeartbeat = () => {
+    if (heartbeat) {
+      clearInterval(heartbeat);
+      heartbeat = undefined;
+    }
+  };
+
   const unsubscribe = runHub.subscribe(agentId, (event) => {
     send(event);
-    if (event.type === "done") res.end();
+    if (event.type === "done") {
+      clearHeartbeat();
+      res.end();
+    }
   });
 
   if (!unsubscribe) {
@@ -299,7 +310,27 @@ app.get("/api/agent/stream", (req, res) => {
     return;
   }
 
-  req.on("close", unsubscribe);
+  // 决策·sse-comment-heartbeat: 无业务事件时定期写 SSE 注释,避免网关/NAT 空闲掐线;
+  // EventSource 与原生解析都忽略 ":" 行。锁屏 OkHttp 长订同一条流也靠这一行。
+  // 接入瞬间若已终态,subscribe 会同步送 done 并 end,此时不再开心跳。
+  if (!res.writableEnded) {
+    heartbeat = setInterval(() => {
+      if (res.writableEnded) {
+        clearHeartbeat();
+        return;
+      }
+      try {
+        res.write(": ping\n\n");
+      } catch {
+        clearHeartbeat();
+      }
+    }, 15_000);
+  }
+
+  req.on("close", () => {
+    clearHeartbeat();
+    unsubscribe();
+  });
 });
 
 app.post("/api/agent/cancel", async (req, res) => {

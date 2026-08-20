@@ -12,8 +12,8 @@ android {
         applicationId = "ltd.yooo.cursorwebchat"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.1.0"
+        versionCode = 6
+        versionName = "0.1.2"
     }
     buildTypes {
         release {
@@ -38,6 +38,7 @@ android {
 
 dependencies {
     implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("androidx.core:core-ktx:1.15.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
 
