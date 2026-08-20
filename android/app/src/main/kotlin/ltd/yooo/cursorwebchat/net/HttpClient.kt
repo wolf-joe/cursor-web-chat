@@ -1,6 +1,8 @@
 package ltd.yooo.cursorwebchat.net
 
 import android.util.Log
+import ltd.yooo.cursorwebchat.HttpAuthStore
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
@@ -15,8 +17,16 @@ object HttpClient {
         private set
 
     fun init() {
+        val basicAuth = Interceptor { chain ->
+            val req = chain.request()
+            if (req.header("Authorization") != null) return@Interceptor chain.proceed(req)
+            val header = HttpAuthStore.authorizationHeaderFor(req.url)
+                ?: return@Interceptor chain.proceed(req)
+            chain.proceed(req.newBuilder().header("Authorization", header).build())
+        }
         okHttp = OkHttpClient.Builder()
             .cookieJar(SharedCookieJar())
+            .addInterceptor(basicAuth)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .build()

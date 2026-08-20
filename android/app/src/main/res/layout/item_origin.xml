@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="?attr/selectableItemBackground"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp">
+
+    <LinearLayout
+        android:id="@+id/origin_row_main"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/origin_url"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#1a1a1a"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/origin_current_mark"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="@string/origin_current"
+            android:textColor="#2f6f4e"
+            android:textSize="12sp"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/origin_delete"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:backgroundTint="#e8e8e4"
+        android:minWidth="0dp"
+        android:text="@string/origin_delete"
+        android:textColor="#1a1a1a" />
+</LinearLayout>

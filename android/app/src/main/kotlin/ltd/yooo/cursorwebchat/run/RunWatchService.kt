@@ -11,6 +11,7 @@ import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import ltd.yooo.cursorwebchat.AppSettings
+import ltd.yooo.cursorwebchat.ShellBusy
 import ltd.yooo.cursorwebchat.net.HttpClient
 import ltd.yooo.cursorwebchat.net.SseReader
 import okhttp3.Call
@@ -50,6 +51,7 @@ class RunWatchService : Service() {
     override fun onDestroy() {
         for (call in calls.values) call.cancel()
         calls.clear()
+        noteWatchCount()
         super.onDestroy()
     }
 
@@ -85,6 +87,7 @@ class RunWatchService : Service() {
 
     private fun stopWatch(agentId: String) {
         calls.remove(agentId)?.cancel()
+        noteWatchCount()
         if (calls.isEmpty()) stopSelfSafely() else refreshOngoing()
     }
 
@@ -99,6 +102,7 @@ class RunWatchService : Service() {
         val req = Request.Builder().url(url).get().build()
         val call = HttpClient.sse.newCall(req)
         calls[agentId] = call
+        noteWatchCount()
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 if (call.isCanceled()) return
@@ -112,6 +116,7 @@ class RunWatchService : Service() {
                         if (code == 401 || code == 403) {
                             Log.w(TAG, "watch $agentId auth $code")
                             calls.remove(agentId)
+                            noteWatchCount()
                             onTerminal(agentId, "error")
                             return
                         }
@@ -144,6 +149,7 @@ class RunWatchService : Service() {
         val status = json.optString("status").ifEmpty { "unknown" }
         // 先从 map 拿掉,避免读循环结束后被当成 eof 去重连。
         calls.remove(agentId)
+        noteWatchCount()
         onTerminal(agentId, status)
         return false
     }
@@ -153,6 +159,7 @@ class RunWatchService : Service() {
         if (attempt >= MAX_RETRY) {
             Log.w(TAG, "watch $agentId give up after $attempt ($reason)")
             calls.remove(agentId)
+            noteWatchCount()
             onTerminal(agentId, "unknown")
             return
         }
@@ -162,6 +169,7 @@ class RunWatchService : Service() {
         handler.postDelayed({
             if (!calls.containsKey(agentId)) return@postDelayed
             calls.remove(agentId)?.cancel()
+            noteWatchCount()
             connect(agentId, attempt + 1)
         }, delay)
     }
@@ -181,6 +189,10 @@ class RunWatchService : Service() {
             ltd.yooo.cursorwebchat.MainActivityBridge.dispatch(agentId, status)
             if (calls.isEmpty()) stopSelfSafely() else refreshOngoing()
         }
+    }
+
+    private fun noteWatchCount() {
+        ShellBusy.setRunWatchCount(calls.size)
     }
 
     companion object {

@@ -8,6 +8,7 @@ class CwcApp : Application() {
     override fun onCreate() {
         super.onCreate()
         CookieManager.getInstance().setAcceptCookie(true)
+        HttpAuthStore.init(this)
         HttpClient.init()
     }
 }

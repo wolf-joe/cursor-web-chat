@@ -9,16 +9,20 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Message
 import android.webkit.CookieManager
+import android.webkit.HttpAuthHandler
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -36,6 +40,10 @@ import java.lang.ref.WeakReference
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private var loadedOrigin: String? = null
+    // 决策·clear-history: 仅 origin 变更后的那次 onPageFinished 清栈,同站刷新不清。
+    private var pendingClearHistory = false
+    private var basicAuthTriedSaved = false
+    private var authDialogOpen = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -115,8 +123,54 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
 
+            override fun onReceivedHttpAuthRequest(
+                view: WebView,
+                handler: HttpAuthHandler,
+                host: String,
+                realm: String,
+            ) {
+                val origin = AppSettings.origin(this@MainActivity)
+                val saved = HttpAuthStore.get(origin)
+                if (saved != null && !basicAuthTriedSaved) {
+                    basicAuthTriedSaved = true
+                    handler.proceed(saved.user, saved.pass)
+                    return
+                }
+                promptHttpAuth(
+                    saved,
+                    onOk = { user, pass ->
+                        HttpAuthStore.put(origin, user, pass)
+                        view.setHttpAuthUsernamePassword(host, realm, user, pass)
+                        handler.proceed(user, pass)
+                    },
+                    onCancel = { handler.cancel() },
+                )
+            }
+
+            override fun onReceivedError(
+                view: WebView,
+                request: WebResourceRequest,
+                error: WebResourceError,
+            ) {
+                if (!request.isForMainFrame) return
+                val desc = error.description?.toString().orEmpty()
+                if (!desc.contains("ERR_HTTP_RESPONSE_CODE_FAILURE")) return
+                val origin = AppSettings.origin(this@MainActivity)
+                promptHttpAuth(
+                    HttpAuthStore.get(origin),
+                    onOk = { user, pass ->
+                        HttpAuthStore.put(origin, user, pass)
+                        loadOrigin()
+                    },
+                )
+            }
+
             override fun onPageFinished(view: WebView, url: String) {
                 CookieManager.getInstance().flush()
+                if (pendingClearHistory) {
+                    view.clearHistory()
+                    pendingClearHistory = false
+                }
                 HttpClient.probeAuth(AppSettings.origin(this@MainActivity))
                 flushPendingTerminal()
             }
@@ -190,7 +244,7 @@ class MainActivity : AppCompatActivity() {
 
     fun reloadPage() {
         runOnUiThread {
-            if (::webView.isInitialized) webView.reload()
+            if (::webView.isInitialized) loadOrigin()
         }
     }
 
@@ -211,8 +265,53 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadOrigin() {
         val origin = AppSettings.origin(this)
+        pendingClearHistory = loadedOrigin != null && loadedOrigin != origin
         loadedOrigin = origin
-        webView.loadUrl(origin)
+        basicAuthTriedSaved = false
+        val headers = HttpAuthStore.extraHeaders(origin)
+        if (headers != null) {
+            webView.loadUrl(origin, headers)
+        } else {
+            webView.loadUrl(origin)
+        }
+    }
+
+    private fun promptHttpAuth(
+        prefill: HttpAuthStore.Creds?,
+        onOk: (String, String) -> Unit,
+        onCancel: () -> Unit = {},
+    ) {
+        if (authDialogOpen || isFinishing) {
+            onCancel()
+            return
+        }
+        authDialogOpen = true
+        val body = layoutInflater.inflate(R.layout.dialog_http_auth, null)
+        val userInput = body.findViewById<EditText>(R.id.http_auth_user)
+        val passInput = body.findViewById<EditText>(R.id.http_auth_pass)
+        if (prefill != null) {
+            userInput.setText(prefill.user)
+            passInput.setText(prefill.pass)
+        }
+        var answered = false
+        AlertDialog.Builder(this)
+            .setTitle(R.string.http_auth_title)
+            .setView(body)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val user = userInput.text.toString()
+                val pass = passInput.text.toString()
+                answered = true
+                if (user.isNotBlank()) onOk(user, pass) else onCancel()
+            }
+            .setNegativeButton(android.R.string.cancel) { _, _ ->
+                answered = true
+                onCancel()
+            }
+            .setOnDismissListener {
+                authDialogOpen = false
+                if (!answered) onCancel()
+            }
+            .show()
     }
 
     private fun isSameOrigin(url: Uri): Boolean {
