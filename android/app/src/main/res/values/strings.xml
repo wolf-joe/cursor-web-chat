@@ -10,7 +10,7 @@
     <string name="origin_delete">删除</string>
     <string name="origin_current">当前</string>
     <string name="origin_cannot_delete_current">正在使用的地址不能删，请先切到其它项</string>
-    <string name="origin_busy">对话还在进行中，请等结束或先点停止，再切换服务器</string>
+    <string name="origin_busy">对话或朗读还在进行中，请等结束或先点停止，再切换服务器</string>
     <string name="shell_settings">壳设置</string>
     <string name="origin_saved">已切换并重新加载</string>
     <string name="origin_cancel">取消</string>
@@ -27,4 +27,12 @@
     <string name="notify_watch_text_n">正在等待 %d 个会话</string>
     <string name="notify_done_ok">回复已完成</string>
     <string name="notify_done_error">这一轮出错了</string>
+    <string name="notify_channel_tts">朗读</string>
+    <string name="notify_channel_tts_desc">锁屏后继续朗读回复。划掉即停止朗读。</string>
+    <string name="notify_tts_loading">正在准备朗读</string>
+    <string name="notify_tts_playing">正在朗读回复</string>
+    <string name="notify_tts_paused">朗读已暂停</string>
+    <string name="notify_tts_pause">暂停</string>
+    <string name="notify_tts_resume">继续</string>
+    <string name="notify_tts_stop">停止</string>
 </resources>

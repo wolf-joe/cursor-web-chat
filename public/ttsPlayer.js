@@ -14,7 +14,7 @@ import {
   fileBrowserOverlay,
 } from "./dom.js";
 
-const SAMPLE_RATE = 24000;
+// 决策·native-owns-media: 壳内(CwcNative.ttsPlay)把出声交给原生 FGS,本文件只同步 UI。
 
 const player = {
   runId: null,
@@ -32,12 +32,22 @@ const player = {
   durations: new Map(),
   /** @type {WakeLockSentinel | null} */
   wakeLock: null,
+  /** @type {"web" | "native"} */
+  backend: "web",
+  nativeCurrent: 0,
 };
+
+function usesNativeTts() {
+  return typeof window.CwcNative !== "undefined" && typeof window.CwcNative.ttsPlay === "function";
+}
 
 function isActivelyPlaying() {
   if (!player.runId) return false;
   if (player.mode === "loading" || player.mode === "streaming") return !player.paused;
-  if (player.mode === "cached" && player.audio) return !player.audio.paused;
+  if (player.mode === "cached") {
+    if (player.audio) return !player.audio.paused;
+    return !player.paused;
+  }
   return false;
 }
 
@@ -72,7 +82,9 @@ function syncMiniBar() {
       const paused =
         player.mode === "streaming"
           ? player.paused
-          : !!(player.audio && player.audio.paused);
+          : player.audio
+            ? player.audio.paused
+            : player.paused;
       ttsMiniPlayBtn.textContent = paused ? "▶" : "❚❚";
     }
   }
@@ -82,7 +94,7 @@ function syncMiniBar() {
     } else if (player.mode === "streaming") {
       ttsMiniStatus.textContent = player.paused ? "已暂停" : "朗读中…";
     } else {
-      ttsMiniStatus.textContent = player.audio && player.audio.paused ? "已暂停" : "朗读中…";
+      ttsMiniStatus.textContent = player.audio && player.audio.paused ? "已暂停" : player.paused ? "已暂停" : "朗读中…";
     }
   }
 }
@@ -214,16 +226,17 @@ function syncControl(runId) {
     // 流式总时长未知,不硬编假进度。
     setTimeDisplay(runId, null, null);
   } else if (player.mode === "cached") {
-    const playing = player.audio && !player.audio.paused;
+    const playing = player.audio ? !player.audio.paused : !player.paused;
     setButtonLabel(runId, playing ? "❚❚" : "▶");
     const audio = player.audio;
     const total =
       audio && Number.isFinite(audio.duration) && audio.duration > 0
         ? audio.duration
         : known;
-    if (audio && total) {
-      setSeekEnabled(runId, true, total, audio.currentTime || 0);
-      setTimeDisplay(runId, audio.currentTime || 0, total);
+    const current = audio ? audio.currentTime || 0 : player.nativeCurrent || 0;
+    if (total) {
+      setSeekEnabled(runId, true, total, current);
+      setTimeDisplay(runId, current, total);
     } else {
       setSeekEnabled(runId, false);
       setTimeDisplay(runId, null, known);
@@ -250,7 +263,7 @@ function clearDrainTimer() {
   }
 }
 
-function stopAll() {
+function stopWebEngine() {
   clearDrainTimer();
   if (player.abort) {
     player.abort.abort();
@@ -270,6 +283,18 @@ function stopAll() {
     }
     player.ctx = null;
   }
+}
+
+function stopAll(opts = {}) {
+  const fromNative = opts.fromNative === true;
+  if (!fromNative && usesNativeTts() && player.backend === "native") {
+    try {
+      window.CwcNative.ttsStop();
+    } catch {
+      // ignore
+    }
+  }
+  stopWebEngine();
   const prev = player.runId;
   player.runId = null;
   player.mode = "idle";
@@ -277,6 +302,8 @@ function stopAll() {
   player.error = null;
   player.nextTime = 0;
   player.paused = false;
+  player.backend = "web";
+  player.nativeCurrent = 0;
   syncWakeLock();
   if (prev) syncControl(prev);
   else syncMiniBar();
@@ -506,6 +533,34 @@ async function startStream(runId) {
 }
 
 async function startPlay(runId) {
+  if (usesNativeTts()) {
+    stopWebEngine();
+    const cwd = state.currentCwd;
+    const agentId = state.currentAgentId;
+    const prev = player.runId;
+    if (!cwd || !agentId) {
+      player.runId = runId;
+      player.mode = "error";
+      player.error = "无当前会话";
+      player.backend = "native";
+      syncWakeLock();
+      syncControl(runId);
+      return;
+    }
+    player.runId = runId;
+    player.mode = "loading";
+    player.phase = "";
+    player.error = null;
+    player.paused = false;
+    player.backend = "native";
+    player.nativeCurrent = 0;
+    syncWakeLock();
+    if (prev && prev !== runId) syncControl(prev);
+    syncControl(runId);
+    window.CwcNative.ttsPlay(runId, cwd, agentId);
+    return;
+  }
+
   stopAll();
   player.runId = runId;
   player.mode = "loading";
@@ -534,7 +589,18 @@ async function startPlay(runId) {
 
 async function togglePlay(runId) {
   if (player.runId === runId) {
-    if (player.mode === "streaming") {
+    if (player.backend === "native") {
+      if (player.mode === "streaming" || player.mode === "cached") {
+        if (player.paused) window.CwcNative.ttsResume();
+        else window.CwcNative.ttsPause();
+        return;
+      }
+      if (player.mode === "loading") return;
+      if (player.mode === "idle") {
+        await startPlay(runId);
+        return;
+      }
+    } else if (player.mode === "streaming") {
       const ctx = getCtx();
       if (player.paused) {
         player.paused = false;
@@ -586,9 +652,21 @@ export async function playTts(runId) {
 }
 
 function onSeekInput(runId, value) {
-  if (player.runId !== runId || player.mode !== "cached" || !player.audio) return;
+  if (player.runId !== runId || player.mode !== "cached") return;
   const t = Number(value);
   if (!Number.isFinite(t)) return;
+  if (player.backend === "native") {
+    player.nativeCurrent = t;
+    try {
+      window.CwcNative.ttsSeek(String(t));
+    } catch {
+      // ignore
+    }
+    const total = player.durations.get(runId);
+    setTimeDisplay(runId, t, total);
+    return;
+  }
+  if (!player.audio) return;
   player.audio.currentTime = t;
   const total = player.durations.get(runId) ?? player.audio.duration;
   setTimeDisplay(runId, t, total);
@@ -655,3 +733,25 @@ function bindMiniBar() {
 }
 
 bindMiniBar();
+
+function applyNativeState(s) {
+  if (!s || typeof s !== "object") return;
+  const runId = s.runId || "";
+  if (s.mode === "idle") {
+    stopAll({ fromNative: true });
+    return;
+  }
+  player.backend = "native";
+  player.runId = runId;
+  player.mode = s.mode || "loading";
+  player.paused = !!s.paused;
+  player.phase = s.phase || "";
+  player.error = s.error || null;
+  if (typeof s.current === "number") player.nativeCurrent = s.current;
+  if (typeof s.duration === "number" && s.duration > 0) rememberDuration(runId, s.duration);
+  syncWakeLock();
+  if (runId) syncControl(runId);
+  else syncMiniBar();
+}
+
+window.__cwcOnTtsState = applyNativeState;

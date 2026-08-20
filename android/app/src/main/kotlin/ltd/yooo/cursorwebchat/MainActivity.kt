@@ -33,6 +33,7 @@ import androidx.core.view.updateLayoutParams
 import ltd.yooo.cursorwebchat.net.HttpClient
 import ltd.yooo.cursorwebchat.run.PendingRunTerminal
 import ltd.yooo.cursorwebchat.run.RunWatchService
+import ltd.yooo.cursorwebchat.tts.TtsPlaybackService
 import org.json.JSONObject
 import java.lang.ref.WeakReference
 
@@ -99,7 +100,7 @@ class MainActivity : AppCompatActivity() {
             useWideViewPort = true
             loadWithOverviewMode = true
         }
-        // 决策·native-watch-own-send: 只暴露 watch/unwatch;页面发消息后才订原生 SSE。
+        // 决策·native-watch-own-send / 决策·native-owns-media: watch 与 tts* 遥控。
         webView.addJavascriptInterface(CwcNativeBridge(), "CwcNative")
         webView.webChromeClient = object : WebChromeClient() {
             override fun onShowFileChooser(
@@ -164,6 +165,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 HttpClient.probeAuth(AppSettings.origin(this@MainActivity))
                 flushPendingTerminal()
+                flushPendingTts()
             }
         }
         webView.setDownloadListener { url, _, _, _, _ ->
@@ -207,6 +209,7 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         flushPendingTerminal()
+        flushPendingTts()
     }
 
     override fun onResume() {
@@ -217,6 +220,7 @@ class MainActivity : AppCompatActivity() {
             loadOrigin()
         }
         flushPendingTerminal()
+        flushPendingTts()
     }
 
     override fun onDestroy() {
@@ -235,6 +239,14 @@ class MainActivity : AppCompatActivity() {
         webView.evaluateJavascript(js, null)
     }
 
+    fun deliverTtsState(json: JSONObject) {
+        if (!::webView.isInitialized) return
+        webView.evaluateJavascript(
+            "window.__cwcOnTtsState && window.__cwcOnTtsState($json);",
+            null,
+        )
+    }
+
     fun reloadPage() {
         runOnUiThread {
             if (::webView.isInitialized) webView.reload()
@@ -245,6 +257,13 @@ class MainActivity : AppCompatActivity() {
         val pending = PendingRunTerminal.last ?: return
         deliverRunTerminal(pending.agentId, pending.status)
         PendingRunTerminal.last = null
+    }
+
+    private fun flushPendingTts() {
+        val json = MainActivityBridge.lastTts ?: return
+        val mode = json.optString("mode")
+        if (mode.isEmpty() || mode == "idle") return
+        deliverTtsState(json)
     }
 
     private fun requestNotificationPermission() {
@@ -334,6 +353,36 @@ class MainActivity : AppCompatActivity() {
             val id = agentId?.trim().orEmpty()
             if (id.isEmpty()) return
             RunWatchService.unwatch(this@MainActivity, id)
+        }
+
+        @JavascriptInterface
+        fun ttsPlay(runId: String?, cwd: String?, agentId: String?) {
+            val id = runId?.trim().orEmpty()
+            val dir = cwd?.trim().orEmpty()
+            val agent = agentId?.trim().orEmpty()
+            if (id.isEmpty() || dir.isEmpty() || agent.isEmpty()) return
+            TtsPlaybackService.play(this@MainActivity, id, dir, agent)
+        }
+
+        @JavascriptInterface
+        fun ttsPause() {
+            TtsPlaybackService.pause(this@MainActivity)
+        }
+
+        @JavascriptInterface
+        fun ttsResume() {
+            TtsPlaybackService.resume(this@MainActivity)
+        }
+
+        @JavascriptInterface
+        fun ttsStop() {
+            TtsPlaybackService.stop(this@MainActivity)
+        }
+
+        @JavascriptInterface
+        fun ttsSeek(seconds: String?) {
+            val t = seconds?.toDoubleOrNull() ?: return
+            TtsPlaybackService.seek(this@MainActivity, t)
         }
     }
 
