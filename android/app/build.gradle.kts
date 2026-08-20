@@ -25,6 +25,8 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // 侧载对照:debuggable=false,证书仍用 debug,避免另管正式签名。
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

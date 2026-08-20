@@ -7,11 +7,12 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import ltd.yooo.cursorwebchat.MainActivity
 import ltd.yooo.cursorwebchat.R
 
@@ -89,18 +90,17 @@ object RunNotifications {
     }
 
     private fun base(context: Context, channel: String): NotificationCompat.Builder {
-        // 决策·notify-icons: 状态栏用 Cursor 白剪影;通知栏大图用启动 PNG decode,
-        // 避免 AdaptiveIconDrawable.toBitmap 画出系统默认机器人。
         val b = NotificationCompat.Builder(context, channel)
-            .setSmallIcon(R.drawable.ic_stat_notify)
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(context.getString(R.string.app_name))
-            .setColor(0xFF111111.toInt())
-        launcherBitmap(context)?.let { b.setLargeIcon(it) }
+        appIcon(context)?.let { b.setLargeIcon(it) }
         return b
     }
 
-    private fun launcherBitmap(context: Context): Bitmap? {
-        return BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher)
+    private fun appIcon(context: Context): Bitmap? {
+        val d = ContextCompat.getDrawable(context, R.mipmap.ic_launcher) ?: return null
+        val px = (48 * context.resources.displayMetrics.density).toInt().coerceAtLeast(96)
+        return d.toBitmap(px, px)
     }
 
     private fun openApp(context: Context, agentId: String?): PendingIntent {
