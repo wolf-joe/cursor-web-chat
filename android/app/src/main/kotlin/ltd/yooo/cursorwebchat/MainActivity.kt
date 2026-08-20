@@ -6,11 +6,8 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.os.Message
-import android.view.Menu
-import android.view.MenuItem
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -18,20 +15,18 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.LinearLayout
+import android.widget.ImageButton
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.Toolbar
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.updateLayoutParams
 import ltd.yooo.cursorwebchat.net.HttpClient
 import ltd.yooo.cursorwebchat.run.PendingRunTerminal
 import ltd.yooo.cursorwebchat.run.RunWatchService
@@ -40,6 +35,7 @@ import java.lang.ref.WeakReference
 
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
+    private var loadedOrigin: String? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,20 +44,26 @@ class MainActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_main)
 
-        val root = findViewById<LinearLayout>(R.id.root)
-        val toolbar = findViewById<Toolbar>(R.id.toolbar)
+        val root = findViewById<FrameLayout>(R.id.root)
         webView = findViewById(R.id.webview)
-        setSupportActionBar(toolbar)
+        val fab = findViewById<ImageButton>(R.id.btn_shell_settings)
         WindowInsetsControllerCompat(window, window.decorView).apply {
             isAppearanceLightStatusBars = false
             isAppearanceLightNavigationBars = true
         }
+        val density = resources.displayMetrics.density
         ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
             val bars = insets.getInsets(
                 WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.displayCutout(),
             )
+            // WebView.setPadding 不会把 HTML 顶出状态栏;给容器留白,网页整块在系统栏下方。
             v.setPadding(bars.left, bars.top, bars.right, 0)
-            insets
+            fab.updateLayoutParams<FrameLayout.LayoutParams> {
+                // 根布局已避开状态栏,再下移越过网页 .chat-header 右上角三点。
+                topMargin = (56 * density).toInt()
+                marginEnd = (8 * density).toInt()
+            }
+            WindowInsetsCompat.CONSUMED
         }
 
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
@@ -123,8 +125,13 @@ class MainActivity : AppCompatActivity() {
             openInBrowser(Uri.parse(url))
         }
 
+        fab.setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState)
+            loadedOrigin = AppSettings.origin(this)
         } else {
             loadOrigin()
         }
@@ -160,6 +167,10 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         CookieManager.getInstance().flush()
+        val origin = AppSettings.origin(this)
+        if (loadedOrigin != null && loadedOrigin != origin) {
+            loadOrigin()
+        }
         flushPendingTerminal()
     }
 
@@ -170,30 +181,17 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(R.menu.main, menu)
-        return true
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-            R.id.action_reload -> {
-                webView.reload()
-                true
-            }
-            R.id.action_origin -> {
-                showOriginDialog()
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
-        }
-    }
-
     fun deliverRunTerminal(agentId: String, status: String) {
         if (!::webView.isInitialized) return
         val js =
             "window.__cwcOnRunTerminal && window.__cwcOnRunTerminal(${JSONObject.quote(agentId)}, ${JSONObject.quote(status)});"
         webView.evaluateJavascript(js, null)
+    }
+
+    fun reloadPage() {
+        runOnUiThread {
+            if (::webView.isInitialized) webView.reload()
+        }
     }
 
     private fun flushPendingTerminal() {
@@ -203,7 +201,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT < 33) return
+        if (android.os.Build.VERSION.SDK_INT < 33) return
         val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
         if (!granted) {
@@ -212,7 +210,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadOrigin() {
-        webView.loadUrl(AppSettings.origin(this))
+        val origin = AppSettings.origin(this)
+        loadedOrigin = origin
+        webView.loadUrl(origin)
     }
 
     private fun isSameOrigin(url: Uri): Boolean {
@@ -239,34 +239,6 @@ class MainActivity : AppCompatActivity() {
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(this, R.string.open_external_failed, Toast.LENGTH_SHORT).show()
         }
-    }
-
-    private fun showOriginDialog() {
-        val input = EditText(this).apply {
-            setText(AppSettings.origin(this@MainActivity))
-            hint = getString(R.string.origin_hint)
-            setSingleLine()
-        }
-        val pad = (16 * resources.displayMetrics.density).toInt()
-        val wrap = FrameLayout(this).apply {
-            setPadding(pad, pad / 2, pad, 0)
-            addView(input)
-        }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.origin_title)
-            .setMessage(R.string.origin_message)
-            .setView(wrap)
-            .setNegativeButton(R.string.origin_cancel, null)
-            .setPositiveButton(R.string.origin_save) { _, _ ->
-                val raw = input.text.toString()
-                if (!AppSettings.isValidOrigin(raw)) {
-                    Toast.makeText(this, R.string.origin_invalid, Toast.LENGTH_LONG).show()
-                    return@setPositiveButton
-                }
-                AppSettings.setOrigin(this, raw)
-                loadOrigin()
-            }
-            .show()
     }
 
     inner class CwcNativeBridge {

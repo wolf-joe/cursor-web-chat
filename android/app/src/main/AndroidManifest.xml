@@ -21,7 +21,8 @@
     <application
         android:name=".CwcApp"
         android:allowBackup="false"
-        android:icon="@android:drawable/sym_def_app_icon"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.CwcShell"
@@ -37,6 +38,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
         <service
             android:name=".run.RunWatchService"
             android:exported="false"
