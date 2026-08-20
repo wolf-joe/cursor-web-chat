@@ -18,6 +18,7 @@
     <string name="origin_title">服务器列表</string>
     <string name="origin_message">点一项即切换；WebView 与原生请求共用当前地址。进行中的对话未结束时不能切。正在使用的那一项不能删除。</string>
     <string name="open_external_failed">没有可打开该链接的浏览器</string>
+    <string name="file_chooser_failed">没有可用的选图应用</string>
     <string name="notify_channel_watch">对话进行中</string>
     <string name="notify_channel_watch_desc">后台保持连接时系统要求的最低常驻条，无声、尽量不占状态栏。划掉不等于停止生成。</string>
     <string name="notify_channel_done">对话结束</string>

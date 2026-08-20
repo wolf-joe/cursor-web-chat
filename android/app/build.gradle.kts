@@ -5,6 +5,13 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val versionProps = Properties()
+rootProject.file("version.properties").reader(Charsets.UTF_8).use { versionProps.load(it) }
+val versionCodeFromFile = versionProps.getProperty("versionCode")?.trim()?.toIntOrNull()
+    ?: error("android/version.properties missing versionCode")
+val versionNameFromFile = versionProps.getProperty("versionName")?.trim()?.takeIf { it.isNotEmpty() }
+    ?: error("android/version.properties missing versionName")
+
 android {
     namespace = "ltd.yooo.cursorwebchat"
     compileSdk = 36
@@ -12,8 +19,8 @@ android {
         applicationId = "ltd.yooo.cursorwebchat"
         minSdk = 26
         targetSdk = 36
-        versionCode = 14
-        versionName = "0.1.10"
+        versionCode = versionCodeFromFile
+        versionName = versionNameFromFile
     }
     buildTypes {
         release {

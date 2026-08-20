@@ -20,6 +20,7 @@
 - `npm run start` —— 单次启动,不带 watch
 - `npm run wecom -- --cwd <path>` —— 企微智能机器人桥接(独立进程,HTTP 调本服务);需 `WECOM_BOT_ID`/`WECOM_SECRET`,详见 `plan/20260801.wecom-bot-bridge.md` 与输出层的 `plan/20260806.wecom-markdown-output.md`。**同一个 bot 只允许一条长连接**:本机跑着 Supervisor 的 `cursor-wecom` 时,另起桥接或跑 `scripts/wecom-contract-check.mjs` 会互相顶掉 subscribe,须先 `supervisorctl stop cursor-wecom`
 - `npm run typecheck` —— `tsc --noEmit`;这是仓库里唯一的自动化检查(没有测试套件,没有 lint 配置)
+- `./scripts/build-android-apk.sh` —— 给真机出 debug APK；不要直接 gradle。本机拷贝路径与下载 URL 不进 git。
 - `npm install` 后会跑 `postinstall: node scripts/patch-sdk.mjs`,对 `@cursor/sdk` 定点注入补丁——**不要跳过**,否则工具调用可能永久卡 RUNNING 或没有终态(见下「SDK 补丁」)
 - 必须有 `CURSOR_API_KEY`——缺失时服务启动即退出。`npm run dev/start` 与 Supervisor command 都用 `node --env-file-if-exists=.env` 从仓库根 `.env` 加载;**不要**把密钥写进 Supervisor `environment` / 期望态定义。
 - **部署信息在 `deploy/`**:`supervisor.ini` 是 Supervisor program 模板(自行改 `directory=` / 日志路径 / `PORT` 等),`install-supervisor.sh` 负责安装(只替换本机 node 路径,不注入密钥)。
