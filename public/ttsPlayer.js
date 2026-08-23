@@ -15,6 +15,8 @@ import {
 } from "./dom.js";
 
 // 决策·native-owns-media: 壳内(CwcNative.ttsPlay)把出声交给原生 FGS,本文件只同步 UI。
+// 网页首播仍走 Web Audio 排 PCM,采样率须与 src/ttsService.ts 的 SAMPLE_RATE 一致。
+const SAMPLE_RATE = 24000;
 
 const player = {
   runId: null,
