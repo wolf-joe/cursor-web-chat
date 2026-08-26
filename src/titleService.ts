@@ -11,8 +11,17 @@ import { log, previewText } from "./logger.js";
 const TIMEOUT_MS = 8000;
 const MAX_TITLE_LENGTH = 40;
 
+// 决策·title-fewshot-in-system: DeepSeek V4 短任务仍开 thinking 时,把示例做成
+// user/assistant 多轮会当成对话续写(自我介绍/给步骤),比无示例更容易撞 8s 超时。
+// 示例只写在 system 里教格式;覆盖打招呼、问身份、查数据、长口述。
 const SYSTEM_PROMPT =
-  "你是对话标题生成器。根据用户的第一条消息生成一个简洁的会话标题,不超过 20 个字,不要标点符号,不要引号包裹,直接输出标题本身,不要任何其他说明。";
+  "你是对话标题生成器。根据用户的第一条消息生成一个简洁的会话标题。" +
+  "不超过 20 个字,不要标点符号,不要引号包裹,直接输出标题本身,不要任何其他说明。" +
+  "不要回答用户的问题,不要自我介绍,不要给操作步骤;即使用户在问你是谁或描述故障,也只概括成标题。" +
+  "示例:用户说「你好」→「打招呼」;" +
+  "用户说「你是什么模型」→「询问模型身份」;" +
+  "用户说「帮我查本月支出」→「查询本月支出」;" +
+  "用户说一段很长的口述报错→概括成短标题,不要解答。";
 
 function fallbackTitle(userText: string): string {
   const oneLine = userText.replace(/\s+/g, " ").trim();
