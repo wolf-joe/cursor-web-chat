@@ -3,7 +3,7 @@
 
 用法:
   python scripts/cursor_user_images.py --cwd /path/to/workspace
-  python scripts/cursor_user_images.py --cwd /path/to/workspace --limit 20
+  python scripts/cursor_user_images.py --cwd /path/to/workspace --limit 10
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
-DEFAULT_LIMIT = 20
+DEFAULT_LIMIT = 10
 PREVIEW_CHARS = 120
 USER_QUERY_RE = re.compile(r"<user_query>\r?\n?([\s\S]*?)\r?\n?</user_query>", re.I)
 
