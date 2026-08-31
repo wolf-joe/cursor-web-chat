@@ -56,7 +56,7 @@
 
 主对话是单进程(SDK / runHub / HTTP / 前端);企微桥接为**另一进程**,只经 HTTP 调本服务,不直连 SDK。其上还挂模型目录、短任务网关与若干工作区辅助模块:
 
-1. **SDK 交互层**(`src/agentService.ts`)—— 唯一直接碰 `Agent.*` 的文件。维护一个内存里的 `Map<agentId, SDKAgent>` 句柄缓存(`send()`/`stream()` 依赖活的句柄;缓存未命中则退回 `Agent.resume()`,并对并发请求做了合并去重,避免同一个冷 agent 被并发 resume 两次)。缓存有数量上限 + 空闲 TTL(可用 `AGENT_CACHE_MAX` / `AGENT_CACHE_IDLE_TTL_MS` 覆盖),只淘汰非 busy 条目;另按 cwd 对 LocalExecutor 租约限龄(默认 45min,`AGENT_EXECUTOR_MAX_AGE_MS` 可覆盖),到期主动 `asyncDispose` 空闲句柄以免 accessToken 中毒(见 `决策·cwd-lease-age`)。本地 agent 的重命名/删除/撤销末轮/孤儿 run 回收也在这一层实现,直接操作 SDK 默认的 `SqliteLocalAgentStore`(`@cursor/sdk/sqlite`)——公开的 `Agent.archive/unarchive/delete` 静态方法是 cloud-only 的,本地场景没有对应的官方入口,只能这样绕。以后如果还需要 `Agent.*` 没暴露的本地能力,这是可参考的套路。
+1. **SDK 交互层**(`src/agentService.ts`)—— 唯一直接碰 `Agent.*` 的文件。维护一个内存里的 `Map<agentId, SDKAgent>` 句柄缓存(`send()`/`stream()` 依赖活的句柄;缓存未命中则退回 `Agent.resume()`,并对并发请求做了合并去重,避免同一个冷 agent 被并发 resume 两次)。缓存有数量上限 + 空闲 TTL(可用 `AGENT_CACHE_MAX` / `AGENT_CACHE_IDLE_TTL_MS` 覆盖),只淘汰非 busy 条目;另按 cwd 对 LocalExecutor 租约限龄(默认 45min,`AGENT_EXECUTOR_MAX_AGE_MS` 可覆盖),到期主动 `asyncDispose` 空闲句柄以免 accessToken 中毒(见 `决策·cwd-lease-age`)。每个 cwd 一份 `SqliteLocalAgentStore`,create/resume/list 都传入同一句柄(见 `决策·shared-local-store`);本地 agent 的重命名/删除/撤销末轮/孤儿 run 回收也直接改这份库——公开的 `Agent.archive/unarchive/delete` 静态方法是 cloud-only 的,本地场景没有对应的官方入口。以后如果还需要 `Agent.*` 没暴露的本地能力,这是可参考的套路。
 2. **run 直播中枢**(`src/runHub.ts`)—— run 的生命周期独立于任何一次 HTTP 请求,归这里托管:一个 run 只被消费一次(`run.stream()`),事件向所有订阅者扇出。**缓存本轮已广播事件,新接入方(含刷新重连)先补发用户文本(`attach`),再整段重放 backlog,然后接实时尾巴**(见 `决策·replay-backlog`;早期「只广播尾巴」的 `replay-tail-only` 已废弃)。订阅者随时可以接入/断开,断开不影响 run 本身继续跑完并持久化;终态后有短暂宽限期再销毁 LiveRun(`决策·terminal-grace`)。
 3. **HTTP 层**(`src/server.ts`)—— 静态文件托管 + API + 可选鉴权中间件。保持薄,业务逻辑放进对应 service / 模块,不要堆在这层。
 4. **前端单页**(`public/*.js`、`index.html`、`style.css`)—— 无构建步骤,原生 ES 模块。`app.js` 是唯一的组合根;其余按职责单向依赖(`state.js`/`dom.js`/`api.js` 是不 import 任何业务模块的叶子层),避免循环引用。大部分更新仍是整体重渲染 DOM,而不是增量 patch——这是故意的简化取舍,不是要修的 bug。
@@ -75,6 +75,7 @@
 - **浏览器断连 ≠ 取消 run。** 后端会继续消费 `run.stream()` 并持久化。真正中断走 `/api/agent/cancel` → `run.cancel()`。同理:**打开 Overlay(diff / 文件浏览 / commit 确认)只盖 UI,禁止 `detachStream`**(`决策·keep-stream`);diff 与文件浏览 Overlay 互斥。
 - **进程异常退出会留下孤儿 running agent/run。** 启动时对每个 folder 扫 `SqliteLocalAgentStore`,把还标着 running/queued 的拨回终态(见 `决策·orphan-reconcile`)。
 - **create/resume 必须显式 `settingSources: ["project","user"]`。** SDK 默认不传则解析为全 false,项目级 `AGENTS.md` / `.cursorrules` 与用户层 skills、`~/.cursor/mcp.json` 都不会加载(见 `决策·setting-sources`)。
+- **create/resume/list 必须传入同一份 `getLocalStore()`。** 不传则 SDK 另开一条 WAL 连接到同一 `store.db`;`asyncDispose` 不关库,Windows 删会话会 `EBUSY`(见 `决策·shared-local-store`)。不能 `Cursor.configure` 全局 store(多 folder)。
 - **撤销末轮是拨 checkpoint,不是界面隐藏。** `/api/agent/undo` 把 `latestCheckpoint` 拨回末轮 `startCheckpointRef`,删该 run 及其 events,清内存 agent 缓存,并删对应 TTS 缓存。只支持撤销链条末尾那一轮。
 - **时间戳、模型、用量都挂在 run 上**,不是单条消息。SDK 只暴露 `run.createdAt` / `run.model` / `run.usage`。
 - **每轮 send 都显式带 model。** local agent `resume` 后 `agent.model` 是 `undefined`;中途切模型以当次 `send(text, { model })` 为准。

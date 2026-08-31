@@ -4,6 +4,7 @@ import {
   Agent,
   type SDKAgent,
   type SDKAgentInfo,
+  type AgentMessage,
   type Run,
   type ListResult,
   type ModelSelection,
@@ -172,6 +173,23 @@ setInterval(() => {
   void evictIdle();
 }, Math.min(IDLE_TTL_MS, 5 * 60 * 1000)).unref();
 
+// 决策·shared-local-store: Agent.create/resume/list 不传 store 时 SDK 会再
+// SqliteLocalAgentStore.open() 一份,与 getLocalStore 各握一条 WAL 连接到同一
+// store.db。asyncDispose 只放 executor 不关库。Linux 能 unlink 仍打开的文件,
+// Windows 删会话会 EBUSY。每个 cwd 只 open 一次,所有 Agent.* local 调用都传入
+// 同一句柄。不能 Cursor.configure 全局 store——本服务托管多个 folder。
+async function localCreateOptions(cwd: string) {
+  return {
+    cwd,
+    settingSources: ["project", "user"] as ["project", "user"],
+    store: await getLocalStore(cwd),
+  };
+}
+
+async function localQueryOptions(cwd: string) {
+  return { runtime: "local" as const, cwd, store: await getLocalStore(cwd) };
+}
+
 export async function createAgent(cwd: string, model: ModelSelection): Promise<SDKAgent> {
   // 决策·setting-sources: SDK 默认 settingSources 为 undefined,解析后 project/user/...
   // 全为 false,导致 localExtensibility 整个模块不被创建,LocalCursorRulesService.load
@@ -184,7 +202,7 @@ export async function createAgent(cwd: string, model: ModelSelection): Promise<S
   const agent = await Agent.create({
     apiKey: process.env.CURSOR_API_KEY,
     model,
-    local: { cwd, settingSources: ["project", "user"] },
+    local: await localCreateOptions(cwd),
   });
   // 决策·log-density: 创建成功并入 sendMessage 的「聊天 run 已建立」(cache:create)。
   await admitToCache(agent.agentId, agent, cwd);
@@ -214,7 +232,7 @@ async function resolveAgent(
       const agent = await Agent.resume(agentId, {
         apiKey: process.env.CURSOR_API_KEY,
         model,
-        local: { cwd, settingSources: ["project", "user"] },
+        local: await localCreateOptions(cwd),
       });
       return admitToCache(agentId, agent, cwd);
     })();
@@ -351,7 +369,11 @@ export async function listFolderAgents(
   cwd: string,
   options?: { limit?: number; cursor?: string },
 ): Promise<ListResult<SDKAgentInfo>> {
-  return Agent.list({ runtime: "local", cwd, limit: options?.limit, cursor: options?.cursor });
+  return Agent.list({
+    ...(await localQueryOptions(cwd)),
+    limit: options?.limit,
+    cursor: options?.cursor,
+  });
 }
 
 // 决策·agent-count-sqlite: Agent.list 只给 {items,nextCursor}、没有 total;侧边栏又
@@ -371,14 +393,20 @@ export async function countFolderAgents(cwd: string): Promise<number> {
 }
 
 export async function listAgentRuns(agentId: string, cwd: string): Promise<Run[]> {
-  const { items } = await Agent.listRuns(agentId, { runtime: "local", cwd });
+  const { items } = await Agent.listRuns(agentId, await localQueryOptions(cwd));
   return items;
 }
 
+export async function listAgentMessages(
+  agentId: string,
+  cwd: string,
+): Promise<AgentMessage[]> {
+  return Agent.messages.list(agentId, await localQueryOptions(cwd));
+}
+
 // 决策·rename-delete: Agent.archive/unarchive/delete 是 cloud-only(SDK 文档明确注明),
-// 本地 agent 没有对应的公开静态方法。但本地默认存储 SqliteLocalAgentStore 本身对外公开
-// 且文档写明"没有传自定义 local.store 时 SDK 打开的就是它"——直接对它做增删改,读写的
-// 是与 Agent.create/list 完全相同的那份 sqlite 文件,而不是另建一套影子存储。
+// 本地 agent 没有对应的公开静态方法。create/resume/list 已注入这份 store
+// (决策·shared-local-store),rename/undo/delete/orphan 直接改同一句柄,不是另开影子库。
 const localStoreCache = new Map<string, Promise<SqliteLocalAgentStore>>();
 
 // history / checkpoint 用户原文等与 rename/undo 共用同一份 store 句柄缓存。

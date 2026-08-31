@@ -1,12 +1,11 @@
 import {
-  Agent,
   type ConversationTurn,
   type AgentMessage,
   type ModelSelection,
   type TokenUsage,
   type RunStatus,
 } from "@cursor/sdk";
-import { listAgentRuns, getLocalStore } from "./agentService.js";
+import { listAgentRuns, listAgentMessages, getLocalStore } from "./agentService.js";
 import {
   checkpointAdvanced,
   extractUserTextFromCheckpointDiff,
@@ -64,7 +63,7 @@ export async function getConversationHistory(
 
   for (const run of sorted) {
     if (!run.supports("conversation")) {
-      const messages = await Agent.messages.list(agentId, { runtime: "local", cwd });
+      const messages = await listAgentMessages(agentId, cwd);
       return { mode: "fallback", messages };
     }
 
@@ -187,7 +186,7 @@ async function backfillUserMessages(
   runTurns: RunTurns[],
 ): Promise<void> {
   if (runTurns.length === 0) return;
-  const messages = await Agent.messages.list(agentId, { runtime: "local", cwd });
+  const messages = await listAgentMessages(agentId, cwd);
   const userTexts = messages
     .filter((m) => m.type === "user")
     .map((m) => extractUserText(m.message));
