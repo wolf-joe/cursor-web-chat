@@ -21,23 +21,34 @@ const TIMEOUT_MS = 15_000;
 const MAX_FILES_IN_PROMPT = 40;
 const MAX_LINES_PER_FILE = 200;
 const MAX_TOTAL_CHARS = 24_000;
-// 决策·message-short-plain: 自动草稿要短、纯文本——中文、prompt 要求最多 30 字,禁止 Markdown
-// (反引号/加粗等)。sanitize 只清格式与多行,不再按字数硬截断兜底。
+// 决策·message-short-plain: 自动草稿要短、纯文本——中文一句、禁止 Markdown
+// (反引号/加粗等)。长度真源是 MAX_COMMIT_MESSAGE_LENGTH,sanitize 截断兜底。
+// 决策·message-no-char-count: 不要写「最多 N 个字」——开思考时模型会逐字点数
+// (中英混排时更甚),空转几百 reasoning tokens。
+// 决策·message-fewshot-in-system: 示例只写在 system 里教风格与长短;做成
+// user/assistant 多轮会被当成对话续写。示例宜短,当作目标长度;上限 50 兜底。
+const MAX_COMMIT_MESSAGE_LENGTH = 50;
 const SYSTEM_PROMPT =
   "你是 git commit message 生成器。根据未提交的 diff 写一条中文 commit message。" +
-  "要求:必须用中文(可保留必要的专有名词/文件名);最多 30 个字;" +
-  "概括「做了什么、为何改」,写成一句完整话,不要只堆几个单词;" +
+  "要求:必须用中文(可保留必要的专有名词/文件名);" +
+  "一句短句即可,概括「做了什么、为何改」,不要只堆几个单词;" +
+  "不要数字数、不要为凑长度反复改写;" +
   "纯文本,禁止 Markdown(不要反引号、加粗、标题、列表、链接);" +
   "不要空行,不要引号包裹,不要 Conventional Commits 前缀(如 feat:/fix:);" +
-  "直接输出 message 本身,不要任何其他说明。";
+  "直接输出 message 本身,不要任何其他说明。" +
+  "示例:diff 把超时从 8 秒调到 15 秒→「将标题生成超时调到 15 秒」;" +
+  "diff 删除 workspace 机制改为订阅文件驱动→「移除 workspace，改由订阅文件驱动下载」;" +
+  "diff 新增设置页切换服务地址→「新增设置页以切换服务地址」;" +
+  "diff 修空指针并补注释→「修复空指针并补充相关注释」。";
 
-/** 取首行、去掉常见 Markdown 记号、压空白。 */
+/** 取首行、去掉常见 Markdown 记号、压空白,再按上限截断。 */
 function sanitizeCommitMessage(raw: string): string {
   const firstLine = raw.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
   return firstLine
     .replace(/[`*_#>~\[\]()]/g, "")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    .slice(0, MAX_COMMIT_MESSAGE_LENGTH);
 }
 
 export interface CommitMessageDraft {
