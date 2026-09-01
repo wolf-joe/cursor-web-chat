@@ -62,8 +62,8 @@ interface RawConfig {
   fileBrowser?: FileBrowserConfig | null;
 }
 
-/** 未在 config 写 model 时的内置默认(与历史 llm-proxy flash 一致)。 */
-export const DEFAULT_LLM_MODEL = "deepseek/deepseek-v4-flash";
+/** 未在 config 写 model 时的内置默认。 */
+export const DEFAULT_LLM_MODEL = "bailian/qwen3.8-flash";
 export const DEFAULT_TTS_MODEL = "mimo/mimo-v2.5-tts";
 export const DEFAULT_TTS_VOICE = "冰糖";
 

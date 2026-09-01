@@ -13,7 +13,6 @@ import {
   isLlmConfigured,
   llmProxyHeaders,
   LLM_APP_NAME,
-  LLM_SHORT_TASK_THINKING,
 } from "./llmProxy.js";
 import { log, previewText } from "./logger.js";
 
@@ -237,7 +236,6 @@ async function* streamRewriteSentences(
     body: JSON.stringify({
       model,
       stream: true,
-      ...LLM_SHORT_TASK_THINKING,
       messages: [
         { role: "system", content: REWRITE_SYSTEM_PROMPT },
         { role: "user", content: truncateText(text) },

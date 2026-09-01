@@ -13,7 +13,7 @@
   "llm": {
     "baseUrl": "http://127.0.0.1:4001/v1",
     "apiKey": "",
-    "model": "deepseek/deepseek-v4-flash"
+    "model": "bailian/qwen3.8-flash"
   },
   "tts": {
     "enabled": false,
