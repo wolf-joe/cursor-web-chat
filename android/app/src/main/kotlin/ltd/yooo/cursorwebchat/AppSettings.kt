@@ -3,6 +3,7 @@ package ltd.yooo.cursorwebchat
 import android.content.Context
 import android.content.SharedPreferences
 import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * 决策·server-origin / 决策·url-only: WebView 与 OkHttp 共用当前 origin;
@@ -12,6 +13,8 @@ object AppSettings {
     private const val PREFS = "cwc_shell"
     private const val KEY_ORIGIN = "server_origin"
     private const val KEY_ORIGINS = "server_origins"
+    // 决策·app-level-user-settings: 网页 persist 整包写入;无键=包装器内从未做过设置动作。
+    private const val KEY_USER_SETTINGS = "user_settings"
 
     fun origin(context: Context): String {
         ensureConsistent(context)
@@ -59,6 +62,24 @@ object AppSettings {
         if (!list.remove(target)) return RemoveOriginResult.NotFound
         writeList(p, list)
         return RemoveOriginResult.Ok
+    }
+
+    /** 空字符串表示从未 set;非法 JSON 不在这里出现(写入时已拒)。 */
+    fun userSettingsJson(context: Context): String =
+        prefs(context).getString(KEY_USER_SETTINGS, "") ?: ""
+
+    /**
+     * 只接受 JSON 对象。空串/非法/数组忽略且不抹掉已有值——坏 payload 不能把真源清掉。
+     */
+    fun setUserSettingsJson(context: Context, raw: String) {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty() || !trimmed.startsWith("{")) return
+        try {
+            JSONObject(trimmed)
+        } catch (_: Exception) {
+            return
+        }
+        prefs(context).edit().putString(KEY_USER_SETTINGS, trimmed).apply()
     }
 
     fun isValidOrigin(raw: String): Boolean {

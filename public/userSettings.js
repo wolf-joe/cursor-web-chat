@@ -1,5 +1,5 @@
 // 决策·two-toggles / 决策·send-key / 决策·menu-requires-cwd: 用户设置 modal。
-// 开关即时写入 localStorage;入口挂 header ⋮,仅有 cwd 时可开菜单。
+// 开关即时写入(updateUserSettings → persist;壳内会再写 SharedPreferences);入口挂 header ⋮,仅有 cwd 时可开菜单。
 // 决策·tts-opt-in: TTS 未启用时隐藏相关设置项。
 import {
   headerTtsSettingsEl,

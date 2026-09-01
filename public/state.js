@@ -1,8 +1,9 @@
 // 全局可变状态 + 浏览器端持久化。最底层的叶子模块之一——不
 // import 任何业务模块,避免循环引用(见 决策·es-module-refactor)。
-// 会话书签走 URL query(决策·url-shape / 决策·replace-only);用户设置与模型仍用 localStorage。
+// 会话书签走 URL query(决策·url-shape / 决策·replace-only);用户设置桌面仍用 localStorage。
+// 决策·app-level-user-settings: 包装器内 persist 整包进壳,切 origin 后 load 认壳;壳空则各站各过各的。
 
-// 决策·two-toggles / 决策·storage-key / 决策·send-key: 用户级设置,仅浏览器 localStorage。
+// 决策·two-toggles / 决策·storage-key / 决策·send-key: 用户级设置。
 const USER_SETTINGS_KEY = "cursor-web-chat:userSettings";
 const SEND_KEYS = new Set(["enter", "ctrlEnter"]);
 
@@ -24,22 +25,59 @@ const DEFAULT_USER_SETTINGS = {
 /** 用户是否在设置里点过发送快捷键;未点过则 persist 时不落盘 sendKey。 */
 let sendKeyExplicit = false;
 
+function readNativeUserSettingsRaw() {
+  try {
+    if (typeof window.CwcNative?.getUserSettings !== "function") return null;
+    const raw = window.CwcNative.getUserSettings();
+    if (typeof raw !== "string" || !raw.trim()) return null;
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
+function applyParsedUserSettings(parsed) {
+  sendKeyExplicit = SEND_KEYS.has(parsed.sendKey);
+  return {
+    autoTts: typeof parsed.autoTts === "boolean" ? parsed.autoTts : DEFAULT_USER_SETTINGS.autoTts,
+    keepAwakeWhileTts:
+      typeof parsed.keepAwakeWhileTts === "boolean"
+        ? parsed.keepAwakeWhileTts
+        : DEFAULT_USER_SETTINGS.keepAwakeWhileTts,
+    sendKey: sendKeyExplicit ? parsed.sendKey : defaultSendKey(),
+  };
+}
+
+function loadUserSettingsFromRaw(raw) {
+  const parsed = JSON.parse(raw);
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("invalid userSettings");
+  }
+  return applyParsedUserSettings(parsed);
+}
+
 function loadUserSettings() {
+  // 壳非空且可解析则以壳为准,只镜像进本站 localStorage,禁止在此 set 回壳(否则打开即升全局)。
+  const nativeRaw = readNativeUserSettingsRaw();
+  if (nativeRaw) {
+    try {
+      const settings = loadUserSettingsFromRaw(nativeRaw);
+      try {
+        localStorage.setItem(USER_SETTINGS_KEY, nativeRaw);
+      } catch {
+        /* quota / private mode */
+      }
+      return settings;
+    } catch {
+      /* 坏 JSON 当本站 localStorage,且不覆盖壳 */
+    }
+  }
   try {
     const raw = localStorage.getItem(USER_SETTINGS_KEY);
     if (!raw) {
       return { ...DEFAULT_USER_SETTINGS, sendKey: defaultSendKey() };
     }
-    const parsed = JSON.parse(raw);
-    sendKeyExplicit = SEND_KEYS.has(parsed.sendKey);
-    return {
-      autoTts: typeof parsed.autoTts === "boolean" ? parsed.autoTts : DEFAULT_USER_SETTINGS.autoTts,
-      keepAwakeWhileTts:
-        typeof parsed.keepAwakeWhileTts === "boolean"
-          ? parsed.keepAwakeWhileTts
-          : DEFAULT_USER_SETTINGS.keepAwakeWhileTts,
-      sendKey: sendKeyExplicit ? parsed.sendKey : defaultSendKey(),
-    };
+    return loadUserSettingsFromRaw(raw);
   } catch {
     return { ...DEFAULT_USER_SETTINGS, sendKey: defaultSendKey() };
   }
@@ -78,7 +116,16 @@ try {
 export function persistUserSettings() {
   const { sendKey, ...rest } = state.userSettings;
   const payload = sendKeyExplicit ? { ...rest, sendKey } : { ...rest };
-  localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify(payload));
+  const raw = JSON.stringify(payload);
+  localStorage.setItem(USER_SETTINGS_KEY, raw);
+  // 决策·app-level-user-settings: 仅设置动作(本函数)写壳;失败静默,本站 localStorage 已生效。
+  try {
+    if (typeof window.CwcNative?.setUserSettings === "function") {
+      window.CwcNative.setUserSettings(raw);
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 export function updateUserSettings(patch) {

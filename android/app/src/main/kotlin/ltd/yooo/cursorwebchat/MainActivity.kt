@@ -384,6 +384,15 @@ class MainActivity : AppCompatActivity() {
             val t = seconds?.toDoubleOrNull() ?: return
             TtsPlaybackService.seek(this@MainActivity, t)
         }
+
+        // 决策·app-level-user-settings: 同步读写,赶得上 state.js 模块加载;空串=从未 persist。
+        @JavascriptInterface
+        fun getUserSettings(): String = AppSettings.userSettingsJson(this@MainActivity)
+
+        @JavascriptInterface
+        fun setUserSettings(json: String?) {
+            AppSettings.setUserSettingsJson(this@MainActivity, json ?: return)
+        }
     }
 
     companion object {
