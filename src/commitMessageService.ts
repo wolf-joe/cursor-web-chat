@@ -26,8 +26,8 @@ const MAX_TOTAL_CHARS = 24_000;
 // 决策·message-no-char-count: 不要写「最多 N 个字」——开思考时模型会逐字点数
 // (中英混排时更甚),空转几百 reasoning tokens。
 // 决策·message-fewshot-in-system: 示例只写在 system 里教风格与长短;做成
-// user/assistant 多轮会被当成对话续写。示例宜短,当作目标长度;上限 50 兜底。
-const MAX_COMMIT_MESSAGE_LENGTH = 50;
+// user/assistant 多轮会被当成对话续写。示例宜短,当作目标长度;上限 70 兜底。
+const MAX_COMMIT_MESSAGE_LENGTH = 70;
 const SYSTEM_PROMPT =
   "你是 git commit message 生成器。根据未提交的 diff 写一条中文 commit message。" +
   "要求:必须用中文(可保留必要的专有名词/文件名);" +
@@ -133,7 +133,7 @@ async function callLlm(diffText: string): Promise<string | null> {
       return null;
     }
     const message = sanitizeCommitMessage(raw);
-    log.info("commit message 已生成", { message, model });
+    log.info("commit message 已生成", { resp: raw, model });
     return message || null;
   } catch (err) {
     log.error("commit message 生成失败", err, { model });
