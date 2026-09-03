@@ -14,6 +14,7 @@ import {
   getLlmConfig,
   isLlmConfigured,
   llmProxyHeaders,
+  LLM_SHORT_TASK_NO_THINKING,
 } from "./llmProxy.js";
 import { log, previewText } from "./logger.js";
 
@@ -111,6 +112,7 @@ async function callLlm(diffText: string): Promise<string | null> {
       headers: llmProxyHeaders(),
       body: JSON.stringify({
         model,
+        ...LLM_SHORT_TASK_NO_THINKING,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: diffText },

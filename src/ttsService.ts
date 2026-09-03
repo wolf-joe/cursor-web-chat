@@ -13,6 +13,7 @@ import {
   isLlmConfigured,
   llmProxyHeaders,
   LLM_APP_NAME,
+  LLM_SHORT_TASK_NO_THINKING,
 } from "./llmProxy.js";
 import { log, previewText } from "./logger.js";
 
@@ -220,10 +221,7 @@ async function* iterSseJsonLines(
 /**
  * 决策·external-rewrite-stream / 决策·newline-only-split / 决策·skip-blank-lines:
  * 流式口语化，只按 `\n` 切非空行入队；忽略 reasoning_content，只吃 delta.content。
- * 决策·tts-rewrite-no-thinking: 口语化必须关思考——开着会先吐完 reasoning,
- * 首句入队(以及后面的逐句合成)被拖数秒。只关 TTS,标题/commit 仍跟上游默认。
- * 当前 llm 段是百炼 qwen,用 enable_thinking;若改回 deepseek/ 需换成
- * thinking: { type: "disabled" }。
+ * 关思考见 llmProxy 决策·short-task-no-thinking。
  */
 async function* streamRewriteSentences(
   text: string,
@@ -240,7 +238,7 @@ async function* streamRewriteSentences(
     body: JSON.stringify({
       model,
       stream: true,
-      enable_thinking: false,
+      ...LLM_SHORT_TASK_NO_THINKING,
       messages: [
         { role: "system", content: REWRITE_SYSTEM_PROMPT },
         { role: "user", content: truncateText(text) },
