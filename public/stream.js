@@ -168,6 +168,7 @@ function handleStreamEvent(event, { agentId, cwd }) {
   switch (event.type) {
     // 决策·attach-user-text: 接入(含 EventSource 因网络抖动自动重连)时补发的
     // 用户文本,只在这次 attach 会话里第一次收到时渲染,避免重连后重复。
+    // 发起方若已乐观画过(决策·optimistic-user-bubble),userBubbleRendered 已为 true。
     case "attach":
       if (!userBubbleRendered) {
         if (chatLogEl.querySelector(".empty, .loading")) chatLogEl.innerHTML = "";
@@ -293,8 +294,11 @@ function handleStreamEvent(event, { agentId, cwd }) {
 // 旁观者中途打开一个 liveRun 会话时,都调这个函数。agentId/cwd 从调用处闭包
 // 传入而不是读全局 state,避免"用户已经切到别的会话"之后这次 attach 的收尾
 // 逻辑(如 done 后的 refetch)还操作着错误的会话。
-export function attachToStream(agentId, cwd) {
+export function attachToStream(agentId, cwd, { userBubbleAlreadyRendered = false } = {}) {
   detachStream();
+  // 发起方已乐观画过用户气泡(决策·optimistic-user-bubble);detach 会清标记,
+  // 这里接上,避免 attach 事件再画一颗。旁观者打开 liveRun 仍走默认 false。
+  userBubbleRendered = userBubbleAlreadyRendered;
   state.streaming = true;
   setComposerEnabled(false);
   showPendingIndicator();

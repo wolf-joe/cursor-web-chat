@@ -7,11 +7,13 @@ import {
   composerImageClear,
   sendBtn,
   chatTitleAgentEl,
+  chatLogEl,
 } from "./dom.js";
 import { state, syncSessionUrl } from "./state.js";
 import { postChat, cancelRunApi } from "./api.js";
 import {
   appendErrorBanner,
+  appendMessageBubble,
   setAgentStatus,
   setComposerEnabled,
   updateHeaderMenuState,
@@ -29,8 +31,8 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 /** @type {{ mimeType: string, data: string, previewUrl: string } | null} */
 let pendingImage = null;
 
-export function clearPendingImage() {
-  if (pendingImage?.previewUrl) URL.revokeObjectURL(pendingImage.previewUrl);
+export function clearPendingImage({ revoke = true } = {}) {
+  if (revoke && pendingImage?.previewUrl) URL.revokeObjectURL(pendingImage.previewUrl);
   pendingImage = null;
   composerImageThumb.removeAttribute("src");
   composerImagePreview.hidden = true;
@@ -95,9 +97,16 @@ export async function sendMessage() {
   const imagePayload = pendingImage
     ? { mimeType: pendingImage.mimeType, data: pendingImage.data }
     : undefined;
+  const imageUrl = pendingImage?.previewUrl;
+
+  // 决策·optimistic-user-bubble: 用户气泡不绑 SSE attach——POST 挂起/失败时
+  // 对话区也要留得住原文(可复制再发)。输入框照常清空,失败不填回(用户可能已在
+  // 起草下一轮,见 决策·draft-while-streaming)。blob 预览交给气泡,发送后不再 revoke。
+  if (chatLogEl.querySelector(".empty, .loading")) chatLogEl.innerHTML = "";
+  appendMessageBubble("user", text, Date.now(), chatLogEl, "force", { imageUrl });
 
   composerInput.value = "";
-  clearPendingImage();
+  clearPendingImage({ revoke: false });
   autoGrowComposer();
   state.streaming = true;
   setComposerEnabled(false);
@@ -135,7 +144,7 @@ export async function sendMessage() {
     markAgentCachedInSidebar(data.agentId);
 
     attached = true;
-    attachToStream(data.agentId, state.currentCwd);
+    attachToStream(data.agentId, state.currentCwd, { userBubbleAlreadyRendered: true });
     // 决策·native-watch-own-send: 只把本机发出的这一轮交给壳的 RunSession;
     // 打开别人已经在跑的 liveRun 只订页面 SSE,不拉前台服务、不弹结束通知。
     if (typeof window.CwcNative !== "undefined" && window.CwcNative.watchRun) {
