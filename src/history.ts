@@ -30,6 +30,9 @@ export interface RunTurns {
   status?: RunStatus;
   // 决策·side-store-by-runId: 旁路有图时带 URL,避免历史每轮盲打 GET 404。
   userImageUrl?: string;
+  // 决策·hook-notice-in-middle: stop-hook 注入条不当 USER;挂在触发它的那一轮,
+  // 前端折进「中间过程」。无则省略。
+  hookNotices?: string[];
   turns: ConversationTurn[];
 }
 
@@ -126,11 +129,12 @@ export async function getConversationHistory(
     // 未推进的 cancelled/error/expired/running 等:不展示。
   }
 
-  // 决策·finished-backfill-untouched(修正): messages.list 的 user 与「checkpoint
-  // 已推进」的轮次按序一一对应——含已推进的 cancelled/error,不只 finished。
-  // 若只拿 finished 去配,已推进取消轮的 user 会把后面 finished 全部错位一格
-  // (案发 Pranks 取消后,Proxy 轮会被安上 Pranks 原文)。未推进取消仍不在此列。
+  // 决策·finished-backfill-untouched(修正): messages.list 的「composer user」与
+  // 「checkpoint 已推进」的轮次按序一一对应——含已推进的 cancelled/error,不只
+  // finished。若只拿 finished 去配,已推进取消轮的 user 会把后面 finished 全部
+  // 错位一格(案发 Pranks 取消后,Proxy 轮会被安上 Pranks 原文)。未推进取消仍不在此列。
   // conversation() 的 userMessage 在 local 下始终缺失,只借 messages.list 补 text。
+  // stop-hook 注入的 user 不是新 Run,配对前剔除(决策·skip-hook-user-turns)。
   await backfillUserMessages(agentId, cwd, runTurns);
 
   // 决策·user-text-from-blobs: messages.list 未配上时,再从 checkpoint blob 差分捞;
@@ -168,16 +172,37 @@ function hasUnresolvedUserMessage(rt: RunTurns): boolean {
   return rt.turns.some((t) => t.type === "agentConversationTurn" && !t.turn.userMessage);
 }
 
+type AgentConversationTurnValue = {
+  userMessage?: { text?: unknown; mode?: unknown };
+};
+
 // messages.list() 的原始载荷是 protobuf-es 的 oneof 包装:
 // message.turn = { case: "agentConversationTurn", value: { userMessage, steps } }
 // (JSON.stringify 会把它序列化成 { agentConversationTurn: {...} } 这种更好看的形式,
 // 但直接访问 JS 对象拿到的是 { case, value } 这层,两者不是一回事,取值时要认 case/value。)
+function getAgentConversationTurnValue(raw: unknown): AgentConversationTurnValue | undefined {
+  const msg = raw as
+    | {
+        turn?: { case?: string; value?: AgentConversationTurnValue };
+        agentConversationTurn?: AgentConversationTurnValue;
+      }
+    | undefined;
+  if (msg?.turn?.case === "agentConversationTurn") return msg.turn.value;
+  return msg?.agentConversationTurn;
+}
+
 function extractUserText(raw: unknown): string | undefined {
-  const turn = (raw as { turn?: { case?: string; value?: { userMessage?: { text?: unknown } } } } | undefined)
-    ?.turn;
-  if (turn?.case !== "agentConversationTurn") return undefined;
-  const text = turn.value?.userMessage?.text;
+  const text = getAgentConversationTurnValue(raw)?.userMessage?.text;
   return typeof text === "string" ? text : undefined;
+}
+
+// 决策·skip-hook-user-turns: stop-hook 把输出再塞进模型时,messages.list 会多一条
+// type=user(同一 requestId、无对应新 Run)。composer 发出的 mode=AGENT(1);
+// 注入条 mode=UNSPECIFIED(0)。按位配对必须跳过,否则后面每一轮原文错一位。
+// mode 缺失(旧数据)不跳——宁肯偶发 hook 错位,也不要误杀全部 user。
+function isStopHookInjectedUser(raw: unknown): boolean {
+  const mode = getAgentConversationTurnValue(raw)?.userMessage?.mode;
+  return mode === 0 || mode === "AGENT_MODE_UNSPECIFIED";
 }
 
 async function backfillUserMessages(
@@ -187,21 +212,32 @@ async function backfillUserMessages(
 ): Promise<void> {
   if (runTurns.length === 0) return;
   const messages = await listAgentMessages(agentId, cwd);
-  const userTexts = messages
-    .filter((m) => m.type === "user")
-    .map((m) => extractUserText(m.message));
-
-  // messages.list 第 i 条 user ↔ 按时间排序后第 i 个「已推进」agentConversationTurn
-  // (含已推进 cancelled/error;不含早停未推进轮)。
-  let i = 0;
+  const slots: { rt: RunTurns; turn: Extract<ConversationTurn, { type: "agentConversationTurn" }> }[] =
+    [];
   for (const rt of runTurns) {
     for (const turn of rt.turns) {
-      if (turn.type !== "agentConversationTurn") continue;
-      if (!turn.turn.userMessage) {
-        const text = userTexts[i];
-        if (text) turn.turn.userMessage = { text };
-      }
-      i += 1;
+      if (turn.type === "agentConversationTurn") slots.push({ rt, turn });
     }
+  }
+
+  // messages.list 第 i 条 composer user ↔ 按时间排序后第 i 个「已推进」agentConversationTurn
+  // (含已推进 cancelled/error;不含早停未推进轮)。
+  // stop-hook 注入条挂到前一个 slot 的 run(决策·hook-notice-in-middle)。
+  let i = 0;
+  for (const m of messages) {
+    if (m.type !== "user") continue;
+    const text = extractUserText(m.message);
+    if (isStopHookInjectedUser(m.message)) {
+      const prev = i > 0 ? slots[i - 1] : undefined;
+      if (prev && text?.trim()) {
+        (prev.rt.hookNotices ??= []).push(text);
+      }
+      continue;
+    }
+    const slot = slots[i];
+    if (slot && !slot.turn.turn.userMessage && text) {
+      slot.turn.turn.userMessage = { text };
+    }
+    i += 1;
   }
 }

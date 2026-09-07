@@ -425,6 +425,26 @@ export function buildCollapsedGroupEl(count) {
   return { el, detail };
 }
 
+// 决策·hook-notice-in-middle: 历史里 stop-hook 原文折进「中间过程」,不当 USER。
+function appendHookNotice(text, container) {
+  const el = document.createElement("div");
+  el.className = "turn-status-banner cancelled hook-notice";
+  const label = document.createElement("div");
+  label.className = "hook-notice-label";
+  label.textContent = "Stop hook 未通过";
+  const body = document.createElement("pre");
+  body.className = "hook-notice-body";
+  body.textContent = text;
+  el.append(label, body);
+  container.appendChild(el);
+  return el;
+}
+
+function normalizeHookNotices(hookNotices) {
+  if (!Array.isArray(hookNotices)) return [];
+  return hookNotices.filter((t) => typeof t === "string" && t.trim());
+}
+
 export function renderConversationStep(step, container = chatLogEl) {
   if (step.type === "assistantMessage") {
     return appendMessageBubble("assistant", step.message.text, undefined, container);
@@ -455,7 +475,7 @@ export function renderConversationStep(step, container = chatLogEl) {
 
 // 返回这批 steps 里最后一条可挂 meta 的气泡(assistant 正文或 createPlan;
 // 可能不是 steps 末项,比如收尾是普通工具调用),供调用方挂模型/用量。
-export function appendStepsWithCollapse(steps) {
+export function appendStepsWithCollapse(steps, hookNotices) {
   let lastAssistantEl;
   const track = (step, el) => {
     if (step.type === "assistantMessage") lastAssistantEl = el;
@@ -464,16 +484,19 @@ export function appendStepsWithCollapse(steps) {
       lastAssistantEl = el;
     }
   };
-  if (steps.length <= 1) {
-    for (const step of steps) track(step, renderConversationStep(step));
+  const list = steps ?? [];
+  const notices = normalizeHookNotices(hookNotices);
+  if (list.length <= 1 && notices.length === 0) {
+    for (const step of list) track(step, renderConversationStep(step));
     return lastAssistantEl;
   }
-  const middle = steps.slice(0, -1);
-  const last = steps[steps.length - 1];
-  const { el, detail } = buildCollapsedGroupEl(middle.length);
+  const last = list.length ? list[list.length - 1] : undefined;
+  const middle = list.length > 1 ? list.slice(0, -1) : [];
+  const { el, detail } = buildCollapsedGroupEl(middle.length + notices.length);
   for (const step of middle) track(step, renderConversationStep(step, detail));
+  for (const text of notices) appendHookNotice(text, detail);
   chatLogEl.appendChild(el);
-  track(last, renderConversationStep(last));
+  if (last) track(last, renderConversationStep(last));
   return lastAssistantEl;
 }
 
@@ -494,7 +517,10 @@ export function renderFallbackMessage(m) {
     return;
   }
   const value = turn.value ?? {};
-  if (value.userMessage?.text) appendMessageBubble("user", value.userMessage.text);
+  // 决策·skip-hook-user-turns: stop-hook 注入条 mode=UNSPECIFIED,不当 USER 画。
+  const mode = value.userMessage?.mode;
+  const hookInjected = mode === 0 || mode === "AGENT_MODE_UNSPECIFIED";
+  if (value.userMessage?.text && !hookInjected) appendMessageBubble("user", value.userMessage.text);
   for (const step of value.steps ?? []) {
     const s = step.message;
     if (s?.case === "thinkingMessage") appendThinkingBlock(s.value?.text ?? "");
@@ -523,6 +549,7 @@ export function renderHistory(data, { scroll = "bottom" } = {}) {
   let hasContent = false;
   for (const run of data.runs) {
     let lastAssistantEl;
+    let leftoverNotices = run.hookNotices;
     for (const turn of run.turns) {
       if (turn.type === "agentConversationTurn") {
         const t = turn.turn;
@@ -534,8 +561,10 @@ export function renderHistory(data, { scroll = "bottom" } = {}) {
           });
           hasContent = true;
         }
-        if ((t.steps ?? []).length) {
-          const el = appendStepsWithCollapse(t.steps);
+        const notices = leftoverNotices;
+        leftoverNotices = undefined;
+        if ((t.steps ?? []).length || (notices ?? []).length) {
+          const el = appendStepsWithCollapse(t.steps, notices);
           if (el) lastAssistantEl = el;
           hasContent = true;
         }
