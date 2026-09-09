@@ -4,7 +4,7 @@
 
 - **任一条锚点失配 → 非零退出**，让安装失败。静默跳过是这里最坏的失败模式（工具调用会永久卡 RUNNING、Shell cwd 错绑、或工具调用无终态）。
 - **幂等**：打过补丁后「未修补」锚点不再命中，脚本跳过已注入项。
-- **注入 patch 1 + patch 2 + patch 3**，共 8 条（esm/cjs 各 4 条）。patch 3 曾在开源时被砍掉，2026-08-06 翻盘重新带上，原因见下文。
+- **注入 patch 1–4**，共 10 条（esm/cjs 各 5 条）。patch 3 曾在开源时被砍掉，2026-08-06 翻盘重新带上，原因见下文。
 
 官方 SDK 文档：[Cursor TypeScript SDK](https://cursor.com/docs)（以官网为准；本仓库不再镜像全文）。
 
@@ -91,6 +91,27 @@ rejection 分支只清缓存、**不再 rethrow**，让 promise resolve 成 `und
 1. 搜 `teamReposPromise`，看 rejection 分支是否仍 rethrow。
 2. 若上游已改成 fail open（返回空 repos）→ 可去掉 patch 3。
 3. 若还 rethrow：按新 chunk 标识符重写锚点。注意这半段锚点里不含 TTL 变量名，esm/cjs 同形，别顺手把变量名写进去。
+
+---
+
+## patch 4: `editToolCall` 完成事件缺 args → hook deny 无终态
+
+- **对应版本**：`@cursor/sdk@1.0.26`
+- **锚点串**：`case"editToolCall":{const{args:t,result:r}=e.tool.value;if(!t)return null;`
+- **改动文件**：`dist/esm/357.js`、`dist/cjs/223.js`
+
+### 现象
+
+`preToolUse` 返回 `permission: "deny"` 时，Write/StrReplace 在 SDK 流里是 `name: "edit"`。会先有 `status: "running"`（args 往往只有 `path`），随后的 `toolCallCompleted` 经常**只有 result、没有 args**。core-adapter 对 `editToolCall` 写了 `if (!args) return null`，整条完成事件不进入 `run.stream()`，网页直播卡在 running，refetch 历史里也没有对应步骤。
+
+### 修法
+
+缺 args 但有 result 时仍映射：`args.path` 可空，`result` 走原有 `w()`/`HE()`（`permissionDenied` 等非 success 会变成 `{ status: "error", error: { message, path } }`）。
+
+### 升级后如何判断还要不要
+
+1. 搜 `case"editToolCall"` 附近是否仍 `if(!t)return null`。
+2. 若官方已允许无 args 的 completed → 可去掉 patch 4。
 
 ---
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * 决策·regex-inject-patch / 决策·patch3-fail-open:
- * 对 @cursor/sdk@1.0.26 的 dist/esm 与 dist/cjs 定点注入 patch 1 + patch 2 + patch 3。
+ * 对 @cursor/sdk@1.0.26 的 dist/esm 与 dist/cjs 定点注入 patch 1–4。
  * 任一条失配必须非零退出(静默跳过会让工具调用永久卡 RUNNING / Shell cwd 错绑 /
- * dashboard 抖动时整段 5 分钟内所有 Grep 类工具调用无终态)。
+ * dashboard 抖动时 Grep 无终态 / preToolUse deny 的 edit 完成事件被丢掉)。
  * 打过补丁后对应「未修补」正则天然不再命中,以此作幂等判据。
  */
 import fs from "node:fs";
@@ -78,6 +78,15 @@ const TARGETS = [
           'const a0=this.terminalExecutor??(0,p.createDefaultTerminalExecutor)({env:{CURSOR_AGENT:"1"},userTerminalHint:this.userTerminalHint});let c;if(this.workspacePaths.length>1){const e=this.workspacePaths.map((e=>(0,o.dirname)(e)));c=e.every((t=>t===e[0]))?e[0]:void 0}else c=t;const a="string"==typeof c&&c?a0.clone(c):a0;let u=new Bi(a,',
       },
       teamReposFailOpen("esm"),
+      {
+        // 决策·edit-completed-without-args: preToolUse deny 的 toolCallCompleted
+        // 常只有 result、没有 args;原逻辑 if(!t)return null 把整条完成事件丢掉。
+        name: "patch4-edit-completed-without-args (esm)",
+        pristine:
+          'case"editToolCall":{const{args:t,result:r}=e.tool.value;if(!t)return null;const n={path:t.path};return Object.assign({type:"edit",args:n},r?{result:w(r)}:{})}',
+        patched:
+          'case"editToolCall":{const{args:t,result:r}=e.tool.value;if(!t&&!r)return null;const n={path:null==t?void 0:t.path};return Object.assign({type:"edit",args:n},r?{result:w(r)}:{})}',
+      },
     ],
   },
   {
@@ -103,6 +112,13 @@ const TARGETS = [
           'const o0=this.terminalExecutor??(0,io.createDefaultTerminalExecutor)({env:{CURSOR_AGENT:"1"},userTerminalHint:this.userTerminalHint});let l;if(this.workspacePaths.length>1){const e=this.workspacePaths.map((e=>(0,a.dirname)(e)));l=e.every((t=>t===e[0]))?e[0]:void 0}else l=t;const o="string"==typeof l&&l?o0.clone(l):o0;let c=new Sv(o,',
       },
       teamReposFailOpen("cjs"),
+      {
+        name: "patch4-edit-completed-without-args (cjs)",
+        pristine:
+          'case"editToolCall":{const{args:t,result:r}=e.tool.value;if(!t)return null;const n={path:t.path};return Object.assign({type:"edit",args:n},r?{result:HE(r)}:{})}',
+        patched:
+          'case"editToolCall":{const{args:t,result:r}=e.tool.value;if(!t&&!r)return null;const n={path:null==t?void 0:t.path};return Object.assign({type:"edit",args:n},r?{result:HE(r)}:{})}',
+      },
     ],
   },
 ];

@@ -50,7 +50,7 @@
 
 ## SDK 补丁
 
-本仓库用 `scripts/patch-sdk.mjs` 对 `@cursor/sdk@1.0.26` 定点注入补丁(stall 吞 completion、Shell cwd、team repos fail closed)。已知根因与升级判断:见 `docs/cursor_sdk_patches.md`。注入只改磁盘,须重启服务才生效。
+本仓库用 `scripts/patch-sdk.mjs` 对 `@cursor/sdk@1.0.26` 定点注入补丁(stall 吞 completion、Shell cwd、team repos fail closed、edit 完成缺 args)。已知根因与升级判断:见 `docs/cursor_sdk_patches.md`。注入只改磁盘,须重启服务才生效。
 
 ## 架构
 

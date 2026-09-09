@@ -96,6 +96,17 @@ function successValue(result) {
   return null;
 }
 
+// 决策·tool-status-from-result: SDK 把 tool-call-completed 一律标成 completed
+// (InteractionUpdate 不带 status),hook deny 的对错只在 result.status。
+// 直播 running 必须保持 running,不能因为还没有 result 就先涂成 error。
+export function toolUiStatus(streamStatus, result) {
+  if (result && typeof result === "object" && result.status === "error") return "error";
+  if (streamStatus === "running") return "running";
+  if (result == null) return "error";
+  if (streamStatus === "error") return "error";
+  return streamStatus || "completed";
+}
+
 function section(label, innerHtml) {
   return `<div class="tool-section-label">${escapeHtml(label)}</div>${innerHtml}`;
 }

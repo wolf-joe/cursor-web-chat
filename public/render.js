@@ -14,7 +14,7 @@ import {
 } from "./dom.js";
 import { state } from "./state.js";
 import { appendTtsControls, stopTtsPlayback, isTtsSessionActive, resyncTtsControls } from "./ttsPlayer.js";
-import { summarizeTool, renderToolDetail, isCreatePlanTool } from "./toolFormat.js";
+import { summarizeTool, renderToolDetail, isCreatePlanTool, toolUiStatus } from "./toolFormat.js";
 import { hydrateMermaid } from "./mermaidHydrate.js";
 import { renderMarkdown } from "./markdown.js";
 
@@ -330,12 +330,19 @@ export function appendToolBlock({ name, status, args, result }, container = chat
   return el;
 }
 
+function isSparseToolArgs(args) {
+  if (args == null) return true;
+  if (typeof args !== "object") return false;
+  return !Object.values(args).some((v) => v != null && v !== "");
+}
+
 // 原地更新(直播 running → completed)。决策·detail-open-state: 重渲详情时保留开合。
+// 决策·keep-running-args: hook deny 的 completed 常带 args:{} ,不能盖掉 running 时的 path。
 export function updateToolBlockEl(el, { name, status, args, result }) {
   const prev = el._toolState || {};
   const next = {
     name: name ?? prev.name ?? "tool",
-    args: args !== undefined ? args : prev.args,
+    args: args !== undefined && !isSparseToolArgs(args) ? args : prev.args ?? args,
     result: result !== undefined ? result : prev.result,
   };
   el._toolState = next;
@@ -425,26 +432,6 @@ export function buildCollapsedGroupEl(count) {
   return { el, detail };
 }
 
-// 决策·hook-notice-in-middle: 历史里 stop-hook 原文折进「中间过程」,不当 USER。
-function appendHookNotice(text, container) {
-  const el = document.createElement("div");
-  el.className = "turn-status-banner cancelled hook-notice";
-  const label = document.createElement("div");
-  label.className = "hook-notice-label";
-  label.textContent = "Stop hook 未通过";
-  const body = document.createElement("pre");
-  body.className = "hook-notice-body";
-  body.textContent = text;
-  el.append(label, body);
-  container.appendChild(el);
-  return el;
-}
-
-function normalizeHookNotices(hookNotices) {
-  if (!Array.isArray(hookNotices)) return [];
-  return hookNotices.filter((t) => typeof t === "string" && t.trim());
-}
-
 export function renderConversationStep(step, container = chatLogEl) {
   if (step.type === "assistantMessage") {
     return appendMessageBubble("assistant", step.message.text, undefined, container);
@@ -452,13 +439,9 @@ export function renderConversationStep(step, container = chatLogEl) {
     return appendThinkingBlock(step.message.text, container);
   } else if (step.type === "toolCall") {
     // step.message: { type: "shell"|..., args, result } —— result 是 unknown,防御式展示。
-    // result.status 是 "success"|"error"(SDK discriminated union);之前这里写死成
-    // "completed",导致 result.status === "error" 的调用在历史记录里也被涂成绿色,
-    // 看不出曾经失败过。result 缺失(理论上 conversation() 只收纳已终结的调用,不应
-    // 发生)时兜底按 completed 展示,不因为防御性判断反而更显眼地报错。
+    // 决策·tool-status-from-result: 对错看 result.status,不要信 stream 的 completed。
     const name = step.message?.type ?? "tool";
-    const resultStatus = step.message?.result?.status;
-    const status = resultStatus === "error" ? "error" : "completed";
+    const status = toolUiStatus(undefined, step.message?.result);
     // 决策·createplan-as-assistant: 计划走气泡,不进工具卡。
     if (isCreatePlanTool(name)) {
       return appendCreatePlanBubble(
@@ -475,7 +458,7 @@ export function renderConversationStep(step, container = chatLogEl) {
 
 // 返回这批 steps 里最后一条可挂 meta 的气泡(assistant 正文或 createPlan;
 // 可能不是 steps 末项,比如收尾是普通工具调用),供调用方挂模型/用量。
-export function appendStepsWithCollapse(steps, hookNotices) {
+export function appendStepsWithCollapse(steps) {
   let lastAssistantEl;
   const track = (step, el) => {
     if (step.type === "assistantMessage") lastAssistantEl = el;
@@ -484,19 +467,16 @@ export function appendStepsWithCollapse(steps, hookNotices) {
       lastAssistantEl = el;
     }
   };
-  const list = steps ?? [];
-  const notices = normalizeHookNotices(hookNotices);
-  if (list.length <= 1 && notices.length === 0) {
-    for (const step of list) track(step, renderConversationStep(step));
+  if (steps.length <= 1) {
+    for (const step of steps) track(step, renderConversationStep(step));
     return lastAssistantEl;
   }
-  const last = list.length ? list[list.length - 1] : undefined;
-  const middle = list.length > 1 ? list.slice(0, -1) : [];
-  const { el, detail } = buildCollapsedGroupEl(middle.length + notices.length);
+  const middle = steps.slice(0, -1);
+  const last = steps[steps.length - 1];
+  const { el, detail } = buildCollapsedGroupEl(middle.length);
   for (const step of middle) track(step, renderConversationStep(step, detail));
-  for (const text of notices) appendHookNotice(text, detail);
   chatLogEl.appendChild(el);
-  if (last) track(last, renderConversationStep(last));
+  track(last, renderConversationStep(last));
   return lastAssistantEl;
 }
 
@@ -517,10 +497,7 @@ export function renderFallbackMessage(m) {
     return;
   }
   const value = turn.value ?? {};
-  // 决策·skip-hook-user-turns: stop-hook 注入条 mode=UNSPECIFIED,不当 USER 画。
-  const mode = value.userMessage?.mode;
-  const hookInjected = mode === 0 || mode === "AGENT_MODE_UNSPECIFIED";
-  if (value.userMessage?.text && !hookInjected) appendMessageBubble("user", value.userMessage.text);
+  if (value.userMessage?.text) appendMessageBubble("user", value.userMessage.text);
   for (const step of value.steps ?? []) {
     const s = step.message;
     if (s?.case === "thinkingMessage") appendThinkingBlock(s.value?.text ?? "");
@@ -549,7 +526,6 @@ export function renderHistory(data, { scroll = "bottom" } = {}) {
   let hasContent = false;
   for (const run of data.runs) {
     let lastAssistantEl;
-    let leftoverNotices = run.hookNotices;
     for (const turn of run.turns) {
       if (turn.type === "agentConversationTurn") {
         const t = turn.turn;
@@ -561,10 +537,8 @@ export function renderHistory(data, { scroll = "bottom" } = {}) {
           });
           hasContent = true;
         }
-        const notices = leftoverNotices;
-        leftoverNotices = undefined;
-        if ((t.steps ?? []).length || (notices ?? []).length) {
-          const el = appendStepsWithCollapse(t.steps, notices);
+        if ((t.steps ?? []).length) {
+          const el = appendStepsWithCollapse(t.steps);
           if (el) lastAssistantEl = el;
           hasContent = true;
         }

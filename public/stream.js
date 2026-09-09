@@ -20,7 +20,7 @@ import {
   showPendingIndicator,
   clearPendingIndicator,
 } from "./render.js";
-import { isCreatePlanTool } from "./toolFormat.js";
+import { isCreatePlanTool, toolUiStatus } from "./toolFormat.js";
 import { hydrateMermaid } from "./mermaidHydrate.js";
 import { loadFolders, currentFolder, renderFolders } from "./sidebar.js";
 import { refreshGitDirty } from "./gitStatus.js";
@@ -109,11 +109,12 @@ function breakThinkingAccumulator() {
 }
 
 function updateToolBlock(callId, { name, status, args, result }) {
+  const uiStatus = toolUiStatus(status, result);
   // 决策·createplan-as-assistant: 计划走气泡并作为 meta 挂载点。
   if (isCreatePlanTool(name)) {
     const el = liveToolBlocks.get(callId);
     if (!el) {
-      const created = appendCreatePlanBubble({ args, status });
+      const created = appendCreatePlanBubble({ args, status: uiStatus });
       liveToolBlocks.set(callId, created);
       currentTurnUnits.push(created);
       lastAssistantBubbleEl = created;
@@ -121,18 +122,36 @@ function updateToolBlock(callId, { name, status, args, result }) {
       scrollChatToBottom({ force: true });
       return;
     }
-    updateCreatePlanBubbleEl(el, { args, status });
+    updateCreatePlanBubbleEl(el, { args, status: uiStatus });
     lastAssistantBubbleEl = el;
     return;
   }
   const el = liveToolBlocks.get(callId);
   if (!el) {
-    const created = appendToolBlock({ name, status, args, result });
+    const created = appendToolBlock({ name, status: uiStatus, args, result });
     liveToolBlocks.set(callId, created);
     currentTurnUnits.push(created);
     return;
   }
-  updateToolBlockEl(el, { name, status, args, result });
+  updateToolBlockEl(el, { name, status: uiStatus, args, result });
+}
+
+// 决策·orphan-running-tools: preToolUse deny 的 completed 若仍被 SDK 丢掉,
+// 工具卡会永远 running。done 时把还在 running 的收成 error,避免折叠后像没发生过。
+function finalizeOrphanToolCalls() {
+  for (const el of liveToolBlocks.values()) {
+    const prev = el._toolState;
+    if (!prev || isCreatePlanTool(prev.name)) continue;
+    const statusEl = el.querySelector(".tool-status");
+    if (!statusEl?.classList.contains("running")) continue;
+    updateToolBlockEl(el, {
+      status: "error",
+      result: prev.result ?? {
+        status: "error",
+        error: { message: "工具未返回结果（可能被 hook 拒绝）" },
+      },
+    });
+  }
 }
 
 // 直播过程中不知道"最后一步"是谁,所以先照常逐条显示;等这一轮 run 结束
@@ -240,6 +259,7 @@ function handleStreamEvent(event, { agentId, cwd }) {
       if (!state.streaming) break;
       breakAssistantAccumulator();
       breakThinkingAccumulator();
+      finalizeOrphanToolCalls();
       collapseCurrentTurnMiddle();
       appendRunMeta(lastAssistantBubbleEl, event.model, event.usage, event.contextUsage);
       lastAssistantBubbleEl = null;
