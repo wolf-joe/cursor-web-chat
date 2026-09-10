@@ -20,7 +20,7 @@ import {
   currentModelSupportsVision,
   updateComposerImageBtn,
 } from "./render.js";
-import { highlightActiveAgent, markAgentCachedInSidebar } from "./sidebar.js";
+import { highlightActiveAgent, insertCreatedAgent, markAgentCachedInSidebar } from "./sidebar.js";
 import { attachToStream } from "./stream.js";
 import { unlockAudio } from "./sound.js";
 
@@ -135,6 +135,7 @@ export async function sendMessage() {
     if (!state.currentAgentId) {
       state.currentAgentId = data.agentId;
       state.currentAgentName = data.agentId;
+      insertCreatedAgent(data.agentId);
       highlightActiveAgent(data.agentId);
       chatTitleAgentEl.textContent = data.agentId;
       syncSessionUrl();

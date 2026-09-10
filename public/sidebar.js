@@ -5,6 +5,8 @@ import {
   menuToggleEl,
   chatTitleAgentEl,
   chatLogEl,
+  recentAgentsBtn,
+  recentAgentsDropdown,
   addFolderBtn,
   addFolderForm,
   addFolderPathInput,
@@ -253,6 +255,26 @@ export function highlightActiveAgent(agentId) {
   });
 }
 
+// 决策·new-agent-sidebar-insert: 新会话在 POST /api/chat 返回时已落盘,但切走会
+// detachStream,done 里的 loadFolders 不再跑。写入当前夹第一页头部(+ lastModified)
+// 后,手风琴与「最近」都不必等 run 结束或整页刷新。打开「最近」仍只读这份内存。
+export function insertCreatedAgent(agentId) {
+  const folder = state.folders.find((f) => f.cwd === state.currentCwd);
+  if (!folder) return;
+  if (!folder.agents) folder.agents = [];
+  if (folder.agents.some((a) => a.agentId === agentId)) return;
+  folder.agents.unshift({
+    agentId,
+    name: agentId,
+    summary: "",
+    lastModified: Date.now(),
+    cached: true,
+  });
+  if (typeof folder.agentCount === "number") folder.agentCount += 1;
+  else folder.agentCount = folder.agents.length;
+  renderFolders();
+}
+
 // 只在流式过程中把已渲染的这一行圆点点绿,不调用 renderFolders() 整体重渲染——
 // 后者会把所有文件夹的展开状态重置为 open,若在同一会话里频繁触发会把用户手动
 // 收起的文件夹重新展开。真正的数据(folder.agents[].cached)靠 loadFolders() 兜底刷新。
@@ -284,8 +306,80 @@ export function markAgentCachedInSidebar(agentId) {
 
 export function closeAllDropdowns() {
   document.querySelectorAll(".dropdown-menu.open").forEach((el) => el.classList.remove("open"));
+  recentAgentsBtn.setAttribute("aria-expanded", "false");
 }
 document.addEventListener("click", closeAllDropdowns);
+
+// 决策·recent-first-pages: 各夹 Agent.list 已按 updatedAt desc 分页,第一页条数
+// 与这里的 N 相同(服务端 AGENT_PAGE_SIZE=5);全局最近 N 条必落在这些第一页的并集,
+// 不必另开 API。打开下拉只盖 UI,不 detachStream(决策·keep-stream)。
+const RECENT_AGENT_LIMIT = 5;
+
+function agentLastModified(agent) {
+  const v = agent.lastModified;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const n = Date.parse(v);
+    return Number.isNaN(n) ? 0 : n;
+  }
+  return 0;
+}
+
+function collectRecentAgents(limit = RECENT_AGENT_LIMIT) {
+  const rows = [];
+  for (const folder of state.folders) {
+    for (const agent of folder.agents ?? []) {
+      rows.push({ folder, agent });
+    }
+  }
+  rows.sort((a, b) => agentLastModified(b.agent) - agentLastModified(a.agent));
+  return rows.slice(0, limit);
+}
+
+function renderRecentDropdown() {
+  recentAgentsDropdown.replaceChildren();
+  const rows = collectRecentAgents();
+  if (rows.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "dropdown-item recent-dropdown-empty";
+    empty.textContent = "暂无会话";
+    recentAgentsDropdown.appendChild(empty);
+    return;
+  }
+  for (const { folder, agent } of rows) {
+    const item = document.createElement("div");
+    item.className = "dropdown-item recent-dropdown-item";
+    item.setAttribute("role", "menuitem");
+    if (agent.agentId === state.currentAgentId) item.classList.add("active");
+
+    const name = document.createElement("div");
+    name.className = "recent-dropdown-name";
+    name.textContent = agent.name || agent.agentId;
+    const folderLine = document.createElement("div");
+    folderLine.className = "recent-dropdown-folder";
+    folderLine.textContent = folder.name;
+    item.append(name, folderLine);
+    item.title = agent.summary || agent.name || agent.agentId;
+
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeAllDropdowns();
+      sessionHooks.openConversation(folder, agent);
+    });
+    recentAgentsDropdown.appendChild(item);
+  }
+}
+
+recentAgentsBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const willOpen = !recentAgentsDropdown.classList.contains("open");
+  closeAllDropdowns();
+  if (!willOpen) return;
+  renderRecentDropdown();
+  recentAgentsDropdown.classList.add("open");
+  recentAgentsBtn.setAttribute("aria-expanded", "true");
+});
+recentAgentsDropdown.addEventListener("click", (e) => e.stopPropagation());
 
 async function loadMoreAgents(folder) {
   const data = await fetchAgentsPage(folder.cwd, folder.nextCursor);
