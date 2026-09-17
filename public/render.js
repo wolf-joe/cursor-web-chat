@@ -16,6 +16,7 @@ import { state } from "./state.js";
 import { appendTtsControls, stopTtsPlayback, isTtsSessionActive, resyncTtsControls } from "./ttsPlayer.js";
 import { summarizeTool, renderToolDetail, isCreatePlanTool, toolUiStatus } from "./toolFormat.js";
 import { hydrateMermaid } from "./mermaidHydrate.js";
+import { hydrateMath } from "./mathHydrate.js";
 import { renderMarkdown } from "./markdown.js";
 
 export { renderMarkdown };
@@ -138,6 +139,7 @@ export function appendMessageBubble(role, text, timestamp, container = chatLogEl
   container.appendChild(el);
   // 决策·mermaid-after-dom: 历史/定稿气泡在入树后再画图；直播增量见 stream.js。
   void hydrateMermaid(textEl);
+  void hydrateMath(textEl);
   if (scrollMode === "force") scrollChatToBottom({ force: true });
   return el;
 }
@@ -275,6 +277,7 @@ export function appendCreatePlanBubble({ args, status }, container = chatLogEl) 
   const textEl = el.querySelector(".msg-text");
   container.appendChild(el);
   void hydrateMermaid(textEl);
+  void hydrateMath(textEl);
   return el;
 }
 
@@ -297,6 +300,7 @@ export function updateCreatePlanBubbleEl(el, { args, status }) {
   if (textEl) {
     textEl.innerHTML = createPlanBodyHtml(next.args);
     void hydrateMermaid(textEl);
+    void hydrateMath(textEl);
   }
 }
 
@@ -327,6 +331,7 @@ export function appendToolBlock({ name, status, args, result }, container = chat
   };
   container.appendChild(el);
   void hydrateMermaid(detail);
+  void hydrateMath(detail);
   return el;
 }
 
@@ -362,6 +367,7 @@ export function updateToolBlockEl(el, { name, status, args, result }) {
   const toggle = el.querySelector(".tool-toggle");
   if (toggle) toggle.textContent = wasOpen ? "折叠" : "展开";
   void hydrateMermaid(detail);
+  void hydrateMath(detail);
 }
 
 export function appendStatusLine(text) {

@@ -22,6 +22,7 @@ import {
 } from "./render.js";
 import { isCreatePlanTool, toolUiStatus } from "./toolFormat.js";
 import { hydrateMermaid } from "./mermaidHydrate.js";
+import { hydrateMath } from "./mathHydrate.js";
 import { loadFolders, currentFolder, renderFolders } from "./sidebar.js";
 import { refreshGitDirty } from "./gitStatus.js";
 import { playDoneChime } from "./sound.js";
@@ -89,6 +90,7 @@ function appendAssistantTextDelta(text) {
 function breakAssistantAccumulator() {
   if (currentAssistantAccumulator?.textEl) {
     void hydrateMermaid(currentAssistantAccumulator.textEl);
+    void hydrateMath(currentAssistantAccumulator.textEl);
   }
   currentAssistantAccumulator = null;
 }

@@ -28,6 +28,7 @@ import { state } from "./state.js";
 import { fetchFsList, fetchFsRead, fetchFsSearch } from "./api.js";
 import { escapeHtml, renderMarkdown } from "./render.js";
 import { hydrateMermaid } from "./mermaidHydrate.js";
+import { hydrateMath } from "./mathHydrate.js";
 import { autoGrowComposer } from "./composer.js";
 
 let open = false;
@@ -97,6 +98,7 @@ function renderPreviewContent(filePath, content, language) {
     // (表格边框、列表缩进等),`.fb-md-preview` 只负责预览区 padding。
     fileBrowserPreview.innerHTML = `<div class="msg-text fb-md-preview">${renderMarkdown(content)}</div>`;
     void hydrateMermaid(fileBrowserPreview);
+    void hydrateMath(fileBrowserPreview);
     return;
   }
 
