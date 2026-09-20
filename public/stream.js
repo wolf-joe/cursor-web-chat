@@ -35,7 +35,7 @@ let liveToolBlocks = new Map();
 // text block 并非每次都是完整文本,同一段回复可能拆成多个事件(如 "p" + "ong2")。
 // 因此流式渲染要把连续的 assistant 文本事件累积进同一个气泡,遇到非文本事件才断开,
 // 否则界面会碎成一堆几个字的小气泡。thinking 事件同理。
-let currentAssistantAccumulator = null; // { textEl, rawText } | null
+let currentAssistantAccumulator = null; // { el, textEl, rawText } | null
 let currentThinkingAccumulator = null; // { el } | null
 
 // 本轮 run 里新建的顶层气泡/块(thinking、工具调用、assistant 文本气泡),
@@ -77,11 +77,13 @@ function appendAssistantTextDelta(text) {
     // 决策·assistant-scroll-once: 每个新 assistant 正文气泡出现时贴底一次,
     // 后续增量不再跟滚。thinking/工具等不走这条路径。
     const el = appendMessageBubble("assistant", "", undefined, chatLogEl, "force");
-    currentAssistantAccumulator = { textEl: el.querySelector(".msg-text"), rawText: "" };
+    currentAssistantAccumulator = { el, textEl: el.querySelector(".msg-text"), rawText: "" };
     currentTurnUnits.push(el);
     lastAssistantBubbleEl = el;
   }
   currentAssistantAccumulator.rawText += text;
+  // 决策·assistant-copy-md: 直播增量同步气泡原文,复制始终对着当前已生成 Markdown。
+  currentAssistantAccumulator.el.dataset.rawText = currentAssistantAccumulator.rawText;
   // 决策·mermaid-after-dom: 增量阶段只 parse markdown，不 hydrate——否则每次
   // innerHTML 都会拆掉半成品 SVG，且不完整 fence 会反复报错。
   currentAssistantAccumulator.textEl.innerHTML = renderMarkdown(currentAssistantAccumulator.rawText);

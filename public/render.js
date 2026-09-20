@@ -116,12 +116,76 @@ export function formatTime(ms) {
 
 // scrollMode: "none"(默认,不滚) | "force"(强制贴底,给用户消息/历史加载用)
 // opts.imageUrl: 用户气泡缩略图(直播 attach 显式给出;历史用旁路 URL + onerror 降级)。
+// 决策·assistant-copy-md: 复制挂 header 右侧常驻「复制」,不进 token meta;
+// 每条 assistant / CreatePlan 气泡拷各自 dataset.rawText(原始 Markdown),
+// 不用渲染后的 textContent(会丢围栏/公式/结构)。
+function createPlanRawText(args) {
+  if (args && typeof args === "object" && typeof args.plan === "string") return args.plan;
+  if (args == null) return "";
+  return safeStringify(args);
+}
+
+function fallbackCopyText(text) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "fixed";
+  ta.style.left = "-9999px";
+  document.body.appendChild(ta);
+  ta.select();
+  const ok = document.execCommand("copy");
+  ta.remove();
+  if (!ok) throw new Error("copy failed");
+}
+
+function flashCopyBtn(btn, label) {
+  const prev = btn._copyResetTimer;
+  if (prev) clearTimeout(prev);
+  btn.textContent = label;
+  btn._copyResetTimer = setTimeout(() => {
+    btn.textContent = "复制";
+    btn._copyResetTimer = 0;
+  }, 1500);
+}
+
+async function copyBubbleMarkdown(bubbleEl, btn) {
+  const text = bubbleEl.dataset.rawText ?? "";
+  try {
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+    else fallbackCopyText(text);
+    flashCopyBtn(btn, "已复制");
+  } catch {
+    try {
+      fallbackCopyText(text);
+      flashCopyBtn(btn, "已复制");
+    } catch {
+      flashCopyBtn(btn, "失败");
+    }
+  }
+}
+
+function mountCopyButton(bubbleEl) {
+  const header = bubbleEl.querySelector(".msg-header");
+  if (!header || header.querySelector(".msg-copy-btn")) return;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "msg-copy-btn";
+  btn.textContent = "复制";
+  btn.setAttribute("aria-label", "复制原文 Markdown");
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    void copyBubbleMarkdown(bubbleEl, btn);
+  });
+  header.appendChild(btn);
+}
+
 export function appendMessageBubble(role, text, timestamp, container = chatLogEl, scrollMode = "none", opts = {}) {
   const el = document.createElement("div");
   el.className = `msg ${role}`;
   // 决策·undo-confirm-copy: 用户气泡保留原文——撤销确认框要展示可复制文本,
   // markdown 渲染后的 DOM textContent 会丢格式/结构,不能当原文源。
-  if (role === "user") el.dataset.rawText = text ?? "";
+  // assistant 同源字段给 决策·assistant-copy-md。
+  el.dataset.rawText = text ?? "";
   const timeHtml =
     role === "user" && timestamp ? `<span class="msg-time">${escapeHtml(formatTime(timestamp))}</span>` : "";
   el.innerHTML = `<div class="msg-header"><span class="msg-role">${role}</span>${timeHtml}</div><div class="msg-text">${renderMarkdown(text)}</div>`;
@@ -136,6 +200,7 @@ export function appendMessageBubble(role, text, timestamp, container = chatLogEl
     img.onerror = () => img.remove();
     el.insertBefore(img, textEl);
   }
+  if (role === "assistant") mountCopyButton(el);
   container.appendChild(el);
   // 决策·mermaid-after-dom: 历史/定稿气泡在入树后再画图；直播增量见 stream.js。
   void hydrateMermaid(textEl);
@@ -266,6 +331,7 @@ export function appendCreatePlanBubble({ args, status }, container = chatLogEl) 
   // 决策·createplan-no-tts: TTS 只抽 assistantMessage 正文,计划气泡挂控件会空读。
   el.dataset.createPlan = "1";
   el._createPlanState = { args, status };
+  el.dataset.rawText = createPlanRawText(args);
   el.innerHTML = `
     <div class="msg-header">
       <span class="msg-role">assistant</span>
@@ -274,6 +340,7 @@ export function appendCreatePlanBubble({ args, status }, container = chatLogEl) 
     </div>
     <div class="msg-text">${createPlanBodyHtml(args)}</div>
   `;
+  mountCopyButton(el);
   const textEl = el.querySelector(".msg-text");
   container.appendChild(el);
   void hydrateMermaid(textEl);
@@ -288,6 +355,7 @@ export function updateCreatePlanBubbleEl(el, { args, status }) {
     status: status != null ? status : prev.status,
   };
   el._createPlanState = next;
+  el.dataset.rawText = createPlanRawText(next.args);
   const header = el.querySelector(".msg-header");
   if (header) {
     header.innerHTML = `
@@ -295,6 +363,7 @@ export function updateCreatePlanBubbleEl(el, { args, status }) {
       <span class="msg-plan-badge">CreatePlan</span>
       ${createPlanStatusHtml(next.status)}
     `;
+    mountCopyButton(el);
   }
   const textEl = el.querySelector(".msg-text");
   if (textEl) {
