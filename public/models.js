@@ -22,7 +22,10 @@ function copyModelSelection(sel) {
 
 export async function loadModels() {
   const data = await fetchModels();
-  state.models = data.models ?? [];
+  const featured = data.models ?? [];
+  const more = data.more ?? [];
+  state.moreModels = more;
+  state.models = [...featured, ...more];
   state.defaultModel = data.default ?? null;
   state.selectedModel = copyModelSelection(state.defaultModel);
   state.ttsEnabled = data.ttsEnabled === true;
@@ -46,10 +49,22 @@ function findModelParamDefault(model, paramId) {
   return defaultVariant?.params.find((p) => p.id === paramId)?.value;
 }
 
+function modelOptionHtml(m) {
+  return `<option value="${escapeHtml(m.id)}">${escapeHtml(m.displayName)}</option>`;
+}
+
 export function renderModelBar() {
-  modelSelectEl.innerHTML = state.models
-    .map((m) => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.displayName)}</option>`)
-    .join("");
+  const more = state.moreModels ?? [];
+  const moreIds = new Set(more.map((m) => m.id));
+  const featured = state.models.filter((m) => !moreIds.has(m.id));
+  // 决策·models-pin-and-more: 有其余模型才分组,避免空「更多」占一行。
+  if (more.length > 0 && featured.length > 0) {
+    modelSelectEl.innerHTML =
+      `<optgroup label="常用">${featured.map(modelOptionHtml).join("")}</optgroup>` +
+      `<optgroup label="更多">${more.map(modelOptionHtml).join("")}</optgroup>`;
+  } else {
+    modelSelectEl.innerHTML = [...featured, ...more].map(modelOptionHtml).join("");
+  }
   modelSelectEl.value = state.selectedModel?.id ?? "";
   renderModelParams();
 }
@@ -76,8 +91,9 @@ function paramValueLabel(value) {
 
 // 齿轮后面只跟一个极短的提示,不是完整参数列表(那种铺开的写法在手机上太占地方,
 // 完整说明和调节都在点齿轮弹出的弹窗里)。规则是两个具体 id 的特判,不是通用逻辑:
-// fast 是"开/关"型,只有开着才值得提一句;effort 是档位型,只要模型支持就把当前
-// 档位亮出来(不管是不是最高档)。其余参数(thinking/context 等)不在这里出现。
+// fast 是"开/关"型,只有开着才值得提一句;档位型只要模型支持就把当前档位亮出来
+// (不管是不是最高档)。Grok 4.7 起目录把 id 从 effort 改成了 reasoning_effort,
+// 展示名仍是 Effort,短标签两 id 都认。其余参数(thinking/context 等)不在这里出现。
 function modelParamsShortLabel(model) {
   const params = model?.parameters ?? [];
   const parts = [];
@@ -85,7 +101,7 @@ function modelParamsShortLabel(model) {
   const fastParam = params.find((p) => p.id === "fast");
   if (fastParam && currentParamValue(model, fastParam) === "true") parts.push("fast");
 
-  const effortParam = params.find((p) => p.id === "effort");
+  const effortParam = params.find((p) => p.id === "effort" || p.id === "reasoning_effort");
   if (effortParam) parts.push(currentParamValue(model, effortParam));
 
   return parts.join("+");

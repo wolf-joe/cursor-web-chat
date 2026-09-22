@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -12,31 +12,41 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // 见下面 决策·startup-cache。不提交进 git(见 .gitignore)。
 const CATALOG_CACHE_PATH = path.join(__dirname, "..", "models-catalog.json");
 
-// 决策·startup-cache: Cursor.models.list() 冷启动要打外部网络,耗时可达数秒;
-// 若每次都等它返回,前端刚打开页面时模型选择器要空等好几秒。这里进程启动时先同步读盘
-// 垫一份上次成功的目录做初始值,再在后台发起真正的网络请求——网络请求落地前的请求
-// 直接吃这份垫底缓存(哪怕是上一次跑的、可能略微过期),网络请求一旦成功就原地升级为
-// 最新值,后续请求都拿新的。只有进程重启后从没成功抓过一次(缓存文件也不存在)时才会
-// 阻塞等网络,不会一直归旧值。
+// 决策·catalog-swr: Cursor.models.list() 可达数秒,不能绑在每次 /api/models 上。
+// 有垫底就立刻返回;超过 TTL 才在后台再拉一次,成功后原地升级内存和磁盘。
+// 失败保留旧缓存。有缓存时失败后短冷却再试,避免目录接口持续失败时每个页面打开都打穿。
+const CATALOG_TTL_MS = 30 * 60 * 1000;
+const CATALOG_RETRY_COOLDOWN_MS = 60 * 1000;
+
+// 决策·startup-cache: 进程启动先同步读盘垫一份上次成功的目录,网络落地前的请求
+// 直接吃这份(哪怕略旧)。只有从没成功抓过且无缓存文件时才阻塞等网络。
+let catalogFetchedAt = 0;
+let lastFetchStartedAt = 0;
+let inFlight: Promise<SDKModel[]> | undefined;
 let latestModels: SDKModel[] | undefined = readCachedCatalogSync();
 
 function readCachedCatalogSync(): SDKModel[] | undefined {
   try {
-    return JSON.parse(readFileSync(CATALOG_CACHE_PATH, "utf-8"));
+    const models = JSON.parse(readFileSync(CATALOG_CACHE_PATH, "utf-8"));
+    if (!Array.isArray(models)) return undefined;
+    catalogFetchedAt = statSync(CATALOG_CACHE_PATH).mtimeMs;
+    return models;
   } catch {
     return undefined;
   }
 }
 
-// 账号下的模型目录几乎不变,进程生命周期内缓存一份即可,不用每次请求都打网络。
-// 失败时把缓存清掉,让下一次请求重试,而不是把一次网络抖动缓存成永久失败。
-let modelsPromise: Promise<SDKModel[]> | undefined;
+function catalogIsStale(): boolean {
+  return Date.now() - catalogFetchedAt >= CATALOG_TTL_MS;
+}
 
 function fetchAllModels(): Promise<SDKModel[]> {
-  if (!modelsPromise) {
-    modelsPromise = Cursor.models.list()
+  if (!inFlight) {
+    lastFetchStartedAt = Date.now();
+    inFlight = Cursor.models.list()
       .then((models) => {
         latestModels = models;
+        catalogFetchedAt = Date.now();
         writeFile(CATALOG_CACHE_PATH, `${JSON.stringify(models, null, 2)}\n`, "utf-8").catch((err) => {
           log.error("写 models-catalog.json 失败(不影响正常功能)", err);
         });
@@ -44,17 +54,24 @@ function fetchAllModels(): Promise<SDKModel[]> {
       })
       .catch((err) => {
         log.error("拉取模型目录失败", err);
-        modelsPromise = undefined;
         throw err;
+      })
+      .finally(() => {
+        inFlight = undefined;
       });
   }
-  return modelsPromise;
+  return inFlight;
 }
 
-// 进程启动就把网络请求发出去,不等第一个 /api/models 请求才触发——这样它跟前端
-// 冷启动那次请求并行跑,尽量缩短"垫底缓存"生效的窗口。失败无需在此处理,
-// listAllowedModels() 里没有垫底缓存可用时会自己等这个 promise 并把错误抛给调用方。
-fetchAllModels().catch(() => {});
+function revalidateCatalogIfStale(): void {
+  if (latestModels && !catalogIsStale()) return;
+  if (inFlight) return;
+  if (latestModels && Date.now() - lastFetchStartedAt < CATALOG_RETRY_COOLDOWN_MS) return;
+  fetchAllModels().catch(() => {});
+}
+
+// 启动即按 SWR 判断要不要打网络,不等第一个 /api/models。
+revalidateCatalogIfStale();
 
 export type AllowedModel = SDKModel & {
   // 决策·vision-allowlist: 前后端共用,前端据此启停加号/粘贴。
@@ -62,31 +79,44 @@ export type AllowedModel = SDKModel & {
 };
 
 export interface AllowedModelsResult {
+  // 有 allowed 时是置顶「常用」;省略或空白名单时是账号全量(保持 list 顺序)。
   models: AllowedModel[];
+  // 决策·models-pin-and-more: 目录里不在 allowed 中的其余模型;无白名单时为空。
+  more: AllowedModel[];
   default: ModelSelectionConfig;
 }
 
+function withVision(m: SDKModel): AllowedModel {
+  return { ...m, supportsVision: modelSupportsVision(m.id) };
+}
+
 export async function listAllowedModels(): Promise<AllowedModelsResult> {
+  revalidateCatalogIfStale();
   const { allowed, default: defaultModel } = loadModelsConfig();
   const all = latestModels ?? (await fetchAllModels());
   const byId = new Map(all.map((m) => [m.id, m]));
 
-  // 决策·models-allowlist-optional: 省略或空白名单 → 账号全量目录(保持 list 顺序)。
+  // 决策·models-allowlist-optional: 省略或空白名单 → 账号全量、不分「更多」。
   const useAllowlist = Array.isArray(allowed) && allowed.length > 0;
-  const models: AllowedModel[] = useAllowlist
-    ? allowed
-        .map((id) => {
-          const m = byId.get(id);
-          if (!m) return undefined;
-          return { ...m, supportsVision: modelSupportsVision(id) };
-        })
-        .filter((m) => m !== undefined)
-    : all.map((m) => ({ ...m, supportsVision: modelSupportsVision(m.id) }));
+  let models: AllowedModel[];
+  let more: AllowedModel[];
+  if (useAllowlist) {
+    const pinnedIds = new Set(allowed);
+    models = allowed
+      .map((id) => {
+        const m = byId.get(id);
+        return m ? withVision(m) : undefined;
+      })
+      .filter((m): m is AllowedModel => m !== undefined);
+    more = all.filter((m) => !pinnedIds.has(m.id)).map(withVision);
+  } else {
+    models = all.map(withVision);
+    more = [];
+  }
 
-  // default 省略 → 用过滤后目录首项;若白名单命中了 default.id 则用之。
+  // default 省略 → 用「常用」首项;若 default.id 在账号目录中则用之(可落在「更多」)。
   let resolvedDefault: ModelSelectionConfig;
   if (defaultModel?.id && byId.has(defaultModel.id)) {
-    // 白名单模式下 default 也须在结果里(或至少在账号目录里);展示层用 id 即可。
     resolvedDefault = defaultModel;
   } else if (models[0]) {
     resolvedDefault = { id: models[0].id };
@@ -94,5 +124,5 @@ export async function listAllowedModels(): Promise<AllowedModelsResult> {
     resolvedDefault = defaultModel ?? { id: all[0]?.id ?? "unknown" };
   }
 
-  return { models, default: resolvedDefault };
+  return { models, more, default: resolvedDefault };
 }

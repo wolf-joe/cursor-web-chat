@@ -55,7 +55,8 @@ npm run wecom -- --cwd /path/to/workspace
 | `.env` | `CURSOR_API_KEY`（必填）、`HOST`/`PORT`、`AUTH_TOKEN`、`WECOM_*` |
 | `config.json` | `folders`（必填）、可选 `llm` / `tts` / `models` / `fileBrowser` |
 
-- **models**：`allowed` 省略或空 → 选择器展示账号全量目录；`default` 省略 → 用目录首项。
+- **models**：`allowed` 列出的 id 进选择器「常用」；账号目录其余进「更多」（不再隐藏）。
+  省略或空 → 不分组、展示全量；`default` 省略 → 用「常用」首项。
 - **fileBrowser.allowParentTree**：默认 `false`（只允许 cwd 内）；`true` 时恢复「父目录树含兄弟目录」行为（monorepo 外链）。
 
 完整字段见 `config.example.json`。
@@ -67,7 +68,8 @@ npm run wecom -- --cwd /path/to/workspace
 1. `npm install` 会升到 `@cursor/sdk@1.0.26`，并只注入 stall completion + Shell cwd 两处补丁（不再带 team repos 那条）。
 2. 把旧的 `llmFlashModel` 迁到 `llm: { baseUrl, apiKey, model }`；缺 `baseUrl` 时标题/草稿会降级。
 3. 增加 `tts` 段并设 `enabled: true`，否则朗读按钮消失。
-4. 把原先硬编码的模型白名单写入 `models`；省略则变为账号全量目录。
+4. 把原先硬编码的模型 id 写入 `models.allowed`（现为「常用」置顶，其余仍出现在「更多」）。
+   省略则不分组、展示全量。
 5. 若依赖「浏览兄弟目录」，设 `fileBrowser.allowParentTree: true`。
 6. 若配置了 `AUTH_TOKEN`，企微桥会自动带同一 token 的 Cookie；未配则与从前一致。
 7. 默认监听改为 `127.0.0.1`；若仍需 `0.0.0.0`，显式设 `HOST` 并配置 `AUTH_TOKEN`。

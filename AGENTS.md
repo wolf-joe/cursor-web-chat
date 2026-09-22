@@ -34,7 +34,6 @@
 - 必须有 `CURSOR_API_KEY`——缺失时服务启动即退出。`npm run dev/start` 与 Supervisor command 都用 `node --env-file-if-exists=.env` 从仓库根 `.env` 加载;**不要**把密钥写进 Supervisor `environment` / 期望态定义。
 - **部署信息在 `deploy/`**:`supervisor.ini` 是 Supervisor program 模板(自行改 `directory=` / 日志路径 / `PORT` 等),`install-supervisor.sh` 负责安装(只替换本机 node 路径,不注入密钥)。
 - **本机 `config.json`**(仓库根目录,不进 git;模板见 `config.example.json`)管 `folders` 白名单,以及可选的 `llm` / `tts` / `models` / `fileBrowser`。新机器:复制 example 后按本机改;字段以 example 与 `src/config.ts` 为准,勿在此复述。
-- **模型白名单/默认值**在 `config.json` 的 `models` 段(可省略;省略则展示账号全量目录)。账号下全量目录另见启动时缓存的 `models-catalog.json`(不进 git)。
 
 ## 排查 agent 会话状态
 
@@ -60,7 +59,7 @@
 2. **run 直播中枢**(`src/runHub.ts`)—— run 的生命周期独立于任何一次 HTTP 请求,归这里托管:一个 run 只被消费一次(`run.stream()`),事件向所有订阅者扇出。**缓存本轮已广播事件,新接入方(含刷新重连)先补发用户文本(`attach`),再整段重放 backlog,然后接实时尾巴**(见 `决策·replay-backlog`;早期「只广播尾巴」的 `replay-tail-only` 已废弃)。订阅者随时可以接入/断开,断开不影响 run 本身继续跑完并持久化;终态后有短暂宽限期再销毁 LiveRun(`决策·terminal-grace`)。
 3. **HTTP 层**(`src/server.ts`)—— 静态文件托管 + API + 可选鉴权中间件。保持薄,业务逻辑放进对应 service / 模块,不要堆在这层。
 4. **前端单页**(`public/*.js`、`index.html`、`style.css`)—— 无构建步骤,原生 ES 模块。`app.js` 是唯一的组合根;其余按职责单向依赖(`state.js`/`dom.js`/`api.js` 是不 import 任何业务模块的叶子层),避免循环引用。大部分更新仍是整体重渲染 DOM,而不是增量 patch——这是故意的简化取舍,不是要修的 bug。
-5. **模型目录**(`src/models.ts`)—— 经 `Cursor.models.list()` 拉账号全量目录,再按 `config.json` 的 `models.allowed` 过滤(可省略)。进程启动时先同步读 `models-catalog.json` 垫底,再后台刷新网络目录。
+5. **模型目录**(`src/models.ts`)—— 拉账号全量;`allowed` 置顶「常用」、其余进「更多」。缓存与刷新见该文件。
 6. **短任务网关**(`src/llmProxy.ts` + 各调用方)—— OpenAI 兼容 `/chat/completions`,**不走 `@cursor/sdk` Agent**(避免脏写本地会话历史)。地址/key/model 来自 `config.json` 的 `llm` 段;缺配置时标题回退截断、commit 草稿不可用。调用方:标题 / TTS 口语化 / commit 草稿。失败/超时只影响各自功能,不拖垮主对话。
 7. **工作区 git**(`src/gitStatus.ts` / `gitDiff.ts` / `gitCommit.ts` / `gitPull.ts`)—— 按 cwd 查 dirty、只读未提交 diff(打开 Overlay 时 fetch+sync)、一锤子 `add -A` → commit → push、以及落后时的 `pull --ff-only`。写路径不做 merge/rebase/force/改历史/自动 `--set-upstream`;commit 前有 behind 闸门;commit✓ push✗ 等分步结果明示、不静默 rollback。
 8. **文件浏览**(`src/fileBrowser.ts`)—— 懒加载列目录 + 文本预览;路径经 realpath 默认禁锢在 cwd 内(`fileBrowser.allowParentTree` 可放开到父目录树);前端把 `@绝对路径` **纯文本**插入 composer,不碰 SDK 附件能力。

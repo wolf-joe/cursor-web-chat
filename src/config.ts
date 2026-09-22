@@ -27,9 +27,10 @@ export interface ModelSelectionConfig {
 }
 
 export interface ModelsConfig {
-  // 白名单——列出的 model id 会出现在前端选择器里。省略(或空数组)时展示账号全量目录。
+  // 置顶——列出的 id 出现在选择器「常用」。省略或空数组 → 不分组,展示账号全量。
+  // 账号目录里其余模型进「更多」(见 决策·models-pin-and-more)。
   allowed?: string[];
-  // 新会话/未显式选择时用的模型。省略则用账号目录第一个。
+  // 新会话/未显式选择时用的模型。省略则用「常用」首项。
   default?: ModelSelectionConfig;
 }
 
@@ -102,7 +103,7 @@ export function loadFolders(): FolderConfig[] {
 
 /**
  * 决策·models-allowlist-optional: 读 config.json 的 models 段。
- * allowed 省略或空 → 调用方展示全量目录;default 省略 → 调用方用目录首项。
+ * allowed 省略或空 → 调用方展示全量、不分「更多」;default 省略 → 调用方用「常用」首项。
  */
 export function loadModelsConfig(): ModelsConfig {
   const raw = readConfig().models;

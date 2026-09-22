@@ -92,7 +92,8 @@ export const state = {
   // 不在侧边栏已加载页时先显示 agentId,翻到含该会话的页再校正。
   currentAgentName: null,
   streaming: false,
-  models: [], // config.models.allowed 过滤后的模型目录(可省略白名单=全量),每项含 parameters/variants
+  models: [], // 常用+更多拼在一起,供按 id 查找;每项含 parameters/variants
+  moreModels: [], // 选择器「更多」optgroup;无 allowed 时为空
   // 决策·model-session-scoped: 来自 config.models.default;/api/models 加载后填入。
   // 切会话时 selectedModel 拨回这份,不跨会话、不进 localStorage。
   defaultModel: null, // { id, params? }
