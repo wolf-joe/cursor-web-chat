@@ -133,10 +133,10 @@ function renderModelParamsModalBody(model, params) {
     .map((p) => {
       const current = currentParamValue(model, p);
       const options = p.values
-        .map(
-          (v) =>
-            `<button type="button" class="param-option${v.value === current ? " selected" : ""}" data-param-id="${escapeHtml(p.id)}" data-value="${escapeHtml(v.value)}">${escapeHtml(paramValueLabel(v))}</button>`,
-        )
+        .map((v) => {
+          const maxOnly = isMaxModeOnlyValue(model, p.id, v.value);
+          return `<button type="button" class="param-option${v.value === current ? " selected" : ""}" data-param-id="${escapeHtml(p.id)}" data-value="${escapeHtml(v.value)}"${maxOnly ? ' disabled title="Max Mode 不可用"' : ""}>${escapeHtml(paramValueLabel(v))}</button>`;
+        })
         .join("");
       return `<div class="param-group"><div class="param-group-label">${escapeHtml(p.displayName ?? p.id)}</div><div class="param-options">${options}</div></div>`;
     })
@@ -144,10 +144,11 @@ function renderModelParamsModalBody(model, params) {
 
   for (const btn of modelParamsModalBody.querySelectorAll(".param-option")) {
     btn.addEventListener("click", () => {
-      const paramId = btn.dataset.paramId;
-      const params = (state.selectedModel.params ?? []).filter((p) => p.id !== paramId);
-      params.push({ id: paramId, value: btn.dataset.value });
-      state.selectedModel = { ...state.selectedModel, params };
+      const pinned = { id: btn.dataset.paramId, value: btn.dataset.value };
+      const params = model.parameters.map((p) =>
+        p.id === pinned.id ? pinned : { id: p.id, value: currentParamValue(model, p) },
+      );
+      state.selectedModel = { ...state.selectedModel, params: avoidMaxModeVariant(model, params, pinned) };
       renderModelParams();
       renderModelParamsModalBody(model, model.parameters);
     });
@@ -159,6 +160,33 @@ modelParamsModalClose.addEventListener("click", closeModelParamsModal);
 modelParamsModalOverlay.addEventListener("click", (e) => {
   if (e.target === modelParamsModalOverlay) closeModelParamsModal();
 });
+
+function sameParams(a, b) {
+  return a.length === b.length && a.every((p) => b.some((q) => q.id === p.id && q.value === p.value));
+}
+
+// 决策·avoid-max-mode: 本 SDK local 运行时对 isMaxMode variant(如 grok-4.7 的 500k
+// context)直接报 "Invalid parameters for registry model",而目录的 isDefault 常落在
+// Max Mode 上。切模型与弹窗点选都过这一道:命中 Max Mode 就改取非 Max Mode 里与之
+// 相同参数最多的一个;pinned 是用户刚点的那项,换算时必须保住。
+function avoidMaxModeVariant(model, params, pinned) {
+  const variants = model.variants ?? [];
+  const hit = variants.find((v) => sameParams(v.params, params));
+  if (!hit?.isMaxMode) return params;
+  const score = (v) => v.params.filter((p) => params.some((q) => q.id === p.id && q.value === p.value)).length;
+  const best = variants
+    .filter((v) => !v.isMaxMode)
+    .filter((v) => !pinned || v.params.some((p) => p.id === pinned.id && p.value === pinned.value))
+    .sort((a, b) => score(b) - score(a))[0];
+  return best ? best.params.map((p) => ({ ...p })) : params;
+}
+
+function isMaxModeOnlyValue(model, paramId, value) {
+  const withValue = (model.variants ?? []).filter((v) =>
+    v.params.some((p) => p.id === paramId && p.value === value),
+  );
+  return withValue.length > 0 && withValue.every((v) => v.isMaxMode);
+}
 
 modelSelectEl.addEventListener("change", () => {
   const model = state.models.find((m) => m.id === modelSelectEl.value);
@@ -172,7 +200,7 @@ modelSelectEl.addEventListener("change", () => {
     if (fastIdx >= 0) params[fastIdx] = { id: "fast", value: "false" };
     else params.push({ id: "fast", value: "false" });
   }
-  state.selectedModel = { id: model.id, params };
+  state.selectedModel = { id: model.id, params: avoidMaxModeVariant(model, params) };
   renderModelParams();
   closeModelParamsModal();
   // 决策·vision-allowlist: 切到非 vision(如 glm-5.2)时清空已选图。
