@@ -39,6 +39,10 @@ export interface LlmConfig {
   baseUrl: string;
   apiKey?: string;
   model?: string;
+  // 决策·short-task-no-thinking: 原样并入每次短任务请求体,用来关思考。各家参数不通用
+  // (qwen: enable_thinking:false;deepseek: thinking:{type:"disabled"};hy4: reasoning_effort:"none"),
+  // 填错不会报错,只会静默继续思考、变慢甚至撞超时——换模型时要一起改。
+  extraBody?: Record<string, unknown>;
 }
 
 /** 决策·tts-opt-in: 默认关闭;enabled+baseUrl 都就绪才开放朗读。 */
@@ -65,6 +69,8 @@ interface RawConfig {
 
 /** 未在 config 写 model 时的内置默认。 */
 export const DEFAULT_LLM_MODEL = "bailian/qwen3.8-flash";
+/** 未写 extraBody 时的默认值,对应 DEFAULT_LLM_MODEL 的关思考参数;显式写 {} 则不附加。 */
+export const DEFAULT_LLM_EXTRA_BODY: Record<string, unknown> = { enable_thinking: false };
 export const DEFAULT_TTS_MODEL = "mimo/mimo-v2.5-tts";
 export const DEFAULT_TTS_VOICE = "冰糖";
 
@@ -130,9 +136,11 @@ export function modelSupportsVision(modelId: string): boolean {
 
 /**
  * 决策·llm-config-split: 仅当 baseUrl 非空时返回配置;否则 undefined(短任务降级)。
- * apiKey 可空(本机无鉴权网关);model 缺省用 DEFAULT_LLM_MODEL。
+ * apiKey 可空(本机无鉴权网关);model 缺省用 DEFAULT_LLM_MODEL;extraBody 缺省用 DEFAULT_LLM_EXTRA_BODY。
  */
-export function loadLlmConfig(): { baseUrl: string; apiKey: string; model: string } | undefined {
+export function loadLlmConfig():
+  | { baseUrl: string; apiKey: string; model: string; extraBody: Record<string, unknown> }
+  | undefined {
   const raw = readConfig().llm;
   if (!raw || typeof raw !== "object") return undefined;
   const baseUrl = typeof raw.baseUrl === "string" ? raw.baseUrl.trim().replace(/\/$/, "") : "";
@@ -140,7 +148,11 @@ export function loadLlmConfig(): { baseUrl: string; apiKey: string; model: strin
   const apiKey = typeof raw.apiKey === "string" ? raw.apiKey.trim() : "";
   const model =
     typeof raw.model === "string" && raw.model.trim() ? raw.model.trim() : DEFAULT_LLM_MODEL;
-  return { baseUrl, apiKey, model };
+  const extraBody =
+    raw.extraBody && typeof raw.extraBody === "object" && !Array.isArray(raw.extraBody)
+      ? raw.extraBody
+      : DEFAULT_LLM_EXTRA_BODY;
+  return { baseUrl, apiKey, model, extraBody };
 }
 
 /**

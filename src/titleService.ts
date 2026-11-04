@@ -4,7 +4,6 @@ import {
   getLlmConfig,
   isLlmConfigured,
   llmProxyHeaders,
-  LLM_SHORT_TASK_NO_THINKING,
 } from "./llmProxy.js";
 import { log, previewText } from "./logger.js";
 
@@ -48,7 +47,7 @@ export async function generateTitle(userText: string): Promise<string | null> {
       headers: llmProxyHeaders(),
       body: JSON.stringify({
         model,
-        ...LLM_SHORT_TASK_NO_THINKING,
+        ...cfg.extraBody,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: userText.slice(0, 2000) },
