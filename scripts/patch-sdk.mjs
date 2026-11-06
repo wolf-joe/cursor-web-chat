@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
  * 决策·regex-inject-patch / 决策·patch3-fail-open:
- * 对 @cursor/sdk@1.0.26 的 dist/esm 与 dist/cjs 定点注入 patch 1–4。
+ * 对 @cursor/sdk@1.0.26 的 dist/esm 与 dist/cjs 定点注入 patch 1–5。
  * 任一条失配必须非零退出(静默跳过会让工具调用永久卡 RUNNING / Shell cwd 错绑 /
- * dashboard 抖动时 Grep 无终态 / preToolUse deny 的 edit 完成事件被丢掉)。
+ * dashboard 抖动时 Grep 无终态 / preToolUse deny 的 edit 完成事件被丢掉 /
+ * 断流重连后同一 Shell 命令被执行两次)。
  * 打过补丁后对应「未修补」正则天然不再命中,以此作幂等判据。
  */
 import fs from "node:fs";
@@ -53,6 +54,27 @@ const teamReposFailOpen = (tag) => ({
     "const t=this.teamReposPromise;return t.catch((e=>{this.teamReposPromise===t&&(this.teamReposPromise=void 0)}))",
 });
 
+// 决策·exec-cache-tool-call-key: resumeAction 从旧 checkpoint 重派同一 toolCallId 时
+// execId 是新的,按 execId 缓存会穿透再执行一次(Shell 命令跑两遍)。改按
+// toolCallId+args 哈希做键;args 无 toolCallId 或拿不到 node:crypto 时退回 execId。
+// 每个执行器各一份 LRU,同一工具调用里参数不同的同类执行仍各自执行。
+const execCacheKey =
+  '(n?.toolCallId&&"function"==typeof n.toBinary&&"function"==typeof process.getBuiltinModule?"tc:"+process.getBuiltinModule("node:crypto").createHash("sha256").update(n.toBinary()).digest("hex"):o.execId)';
+const execCacheHitLog = (k) =>
+  `${k}.startsWith("tc:")&&console.warn("[patch-sdk] patch5 复用同一 toolCallId 的首次执行",{toolCallId:n.toolCallId,execId:o.execId})`;
+const execCachePatches = (tag, { k, v, stream }) => [
+  {
+    name: `patch5-exec-cache-key (${tag})`,
+    pristine: `async execute(t,n,o){if(!o?.execId)return e.execute(t,n,o);const ${k}=o.execId,${v}=r.get(${k});if(void 0!==${v})return ${v};`,
+    patched: `async execute(t,n,o){if(!o?.execId)return e.execute(t,n,o);const ${k}=${execCacheKey},${v}=r.get(${k});if(void 0!==${v})return ${execCacheHitLog(k)},${v};`,
+  },
+  {
+    name: `patch5-shell-stream-cache-key (${tag})`,
+    pristine: `const ${stream.k}=o.execId,${stream.v}=r.get(${stream.k});if(${stream.v})return void(yield*${stream.v}.fork());`,
+    patched: `const ${stream.k}=${execCacheKey},${stream.v}=r.get(${stream.k});if(${stream.v})return ${execCacheHitLog(stream.k)},void(yield*${stream.v}.fork());`,
+  },
+];
+
 /** @type {{ file: string, patches: { name: string, pristine: string, patched: string }[] }[]} */
 const TARGETS = [
   {
@@ -87,6 +109,7 @@ const TARGETS = [
         patched:
           'case"editToolCall":{const{args:t,result:r}=e.tool.value;if(!t&&!r)return null;const n={path:null==t?void 0:t.path};return Object.assign({type:"edit",args:n},r?{result:w(r)}:{})}',
       },
+      ...execCachePatches("esm", { k: "s", v: "i", stream: { k: "s", v: "i" } }),
     ],
   },
   {
@@ -119,6 +142,7 @@ const TARGETS = [
         patched:
           'case"editToolCall":{const{args:t,result:r}=e.tool.value;if(!t&&!r)return null;const n={path:null==t?void 0:t.path};return Object.assign({type:"edit",args:n},r?{result:HE(r)}:{})}',
       },
+      ...execCachePatches("cjs", { k: "i", v: "s", stream: { k: "i", v: "s" } }),
     ],
   },
 ];

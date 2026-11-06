@@ -4,7 +4,7 @@
 
 - **任一条锚点失配 → 非零退出**，让安装失败。静默跳过是这里最坏的失败模式（工具调用会永久卡 RUNNING、Shell cwd 错绑、或工具调用无终态）。
 - **幂等**：打过补丁后「未修补」锚点不再命中，脚本跳过已注入项。
-- **注入 patch 1–4**，共 10 条（esm/cjs 各 5 条）。patch 3 曾在开源时被砍掉，2026-08-06 翻盘重新带上，原因见下文。
+- **注入 patch 1–5**，共 14 条（esm/cjs 各 7 条）。patch 3 曾在开源时被砍掉，2026-08-06 翻盘重新带上，原因见下文。
 
 官方 SDK 文档：[Cursor TypeScript SDK](https://cursor.com/docs)（以官网为准；本仓库不再镜像全文）。
 
@@ -112,6 +112,32 @@ rejection 分支只清缓存、**不再 rethrow**，让 promise resolve 成 `und
 
 1. 搜 `case"editToolCall"` 附近是否仍 `if(!t)return null`。
 2. 若官方已允许无 args 的 completed → 可去掉 patch 4。
+
+---
+
+## patch 5: exec 缓存按 `execId` 做键 → 断流重连后同一 Shell 命令执行两次
+
+- **对应版本**：`@cursor/sdk@1.0.26`（1.3.1 仍未修，键仍以 `execId` 打头）
+- **锚点**：通用执行器包装 `ns`（cjs 为 `zm`）与流式 Shell 包装里的 `o.execId` 缓存键
+- **改动文件**：同上 esm/cjs chunk
+
+### 现象
+
+长耗时 Shell 回传结果时断流，SDK 从旧 checkpoint 发 `resumeAction`。
+云端对同一 `toolCallId` 换新 `execId` 重派，本地 LRU 按 `execId` 未命中，命令再跑一遍。
+完整排查见 `docs/shell-command-replay.md`。
+
+### 修法
+
+args 带 `toolCallId` 时，缓存键改为 args 的 sha256（args 内已含 `toolCallId`），否则仍用 `execId`。
+重派命中后复用首次执行：Shell 流经 `fork()` 重放已有事件或接上仍在跑的尾巴。
+哈希取自 `process.getBuiltinModule("node:crypto")`，压缩 chunk 里的 crypto 变量名不可依赖。
+按 `toolCallId` 命中时打一条 `console.warn`，用来确认线上确实触发过。
+
+### 升级后如何判断还要不要
+
+1. 看执行器缓存键是否已改用 `toolCallId`，或云端重派时已复用原 `execId`。
+2. 若仍只认 `execId` → 按新 chunk 标识符重写锚点（1.3.1 的键函数是 `NI(o.execId,n)`）。
 
 ---
 
