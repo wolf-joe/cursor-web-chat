@@ -94,7 +94,11 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun selectOrigin(url: String) {
-        if (url == AppSettings.origin(this)) return
+        if (url == AppSettings.origin(this)) {
+            MainActivityBridge.instance?.get()?.reloadPage()
+            finish()
+            return
+        }
         when (AppSettings.setCurrent(this, url)) {
             SetCurrentResult.Ok -> {
                 Toast.makeText(this, R.string.origin_saved, Toast.LENGTH_SHORT).show()

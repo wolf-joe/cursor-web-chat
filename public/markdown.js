@@ -19,7 +19,18 @@ function escapeHtml(s) {
 function patchMarkedAutolink() {
   if (markedAutolinkPatched || typeof marked === "undefined") return;
   markedAutolinkPatched = true;
+  const baseLinkRenderer = marked.Renderer.prototype.link;
   marked.use({
+    // 决策·external-link-blank: 对话/预览里的 Markdown 链接一律新窗口打开,
+    // 桌面浏览器开新标签页、安卓壳走 onCreateWindow 拉起系统浏览器,不顶掉当前会话页。
+    renderer: {
+      link(...args) {
+        const html = baseLinkRenderer.apply(this, args);
+        return typeof html === "string" && html.startsWith("<a ")
+          ? `<a target="_blank" rel="noopener noreferrer" ${html.slice(3)}`
+          : html;
+      },
+    },
     tokenizer: {
       url(src) {
         if (!/^(?:ftp|https?):\/\/|^www\./i.test(src)) return false;

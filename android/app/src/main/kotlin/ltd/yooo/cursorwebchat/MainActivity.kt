@@ -3,10 +3,15 @@ package ltd.yooo.cursorwebchat
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.Message
 import android.util.Patterns
 import android.webkit.CookieManager
@@ -22,6 +27,7 @@ import android.widget.ImageButton
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -125,6 +131,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+            // 决策·chat-link-external: target="_blank" / window.open 一律拉起系统外部浏览器,
+            // 不再按 shouldStayInApp 塞回主 WebView(Caddy 登录 302 走主框架重定向,不走 onCreateWindow)。
             override fun onCreateWindow(
                 view: WebView,
                 isDialog: Boolean,
@@ -134,12 +142,8 @@ class MainActivity : AppCompatActivity() {
                 val dummy = WebView(view.context)
                 dummy.webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
-                        val url = request.url
-                        if (shouldStayInApp(url)) {
-                            view.loadUrl(url.toString())
-                            return true
-                        }
-                        openInBrowser(url)
+                        openInBrowser(request.url)
+                        v.destroy()
                         return true
                     }
                 }
@@ -152,7 +156,7 @@ class MainActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url
-                if (shouldStayInApp(url)) return false
+                if (shouldStayInApp(url, view.url, request)) return false
                 openInBrowser(url)
                 return true
             }
@@ -170,6 +174,31 @@ class MainActivity : AppCompatActivity() {
         }
         webView.setDownloadListener { url, _, _, _, _ ->
             openInBrowser(Uri.parse(url))
+        }
+        // 决策·link-long-press-menu: WebView 默认无 Chrome 式长按链接弹窗;
+        // 命中 <a> 或图片链接时弹原生菜单(浏览器打开/复制/分享),普通文字返回 false 保留选词复制。
+        webView.setOnLongClickListener { view ->
+            val v = view as? WebView ?: return@setOnLongClickListener false
+            val hit = v.hitTestResult
+            when (hit.type) {
+                WebView.HitTestResult.SRC_ANCHOR_TYPE -> {
+                    val url = hit.extra?.trim().orEmpty()
+                    if (url.isEmpty()) return@setOnLongClickListener false
+                    showLinkContextMenu(url)
+                    true
+                }
+                WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
+                    val msg = Handler(Looper.getMainLooper()) { m ->
+                        val url = m.data?.getString("url")?.trim().orEmpty()
+                            .ifEmpty { hit.extra?.trim().orEmpty() }
+                        if (url.isNotEmpty()) showLinkContextMenu(url)
+                        true
+                    }.obtainMessage()
+                    v.requestFocusNodeHref(msg)
+                    true
+                }
+                else -> false
+            }
         }
 
         fab.setOnClickListener {
@@ -249,7 +278,13 @@ class MainActivity : AppCompatActivity() {
 
     fun reloadPage() {
         runOnUiThread {
-            if (::webView.isInitialized) webView.reload()
+            if (!::webView.isInitialized) return@runOnUiThread
+            val current = webView.url?.let { Uri.parse(it) }
+            if (current != null && isChatEntryUrl(current)) {
+                webView.reload()
+            } else {
+                loadOrigin()
+            }
         }
     }
 
@@ -288,12 +323,29 @@ class MainActivity : AppCompatActivity() {
 
     // 决策·auth-site-family: Caddy 门户与业务常是兄弟子域;未登录会 302 到门户。
     // 父域从当前 origin 去掉最左标签推出(webchat.a.b → a.b);IP / 单标签主机只认同源。
-    private fun shouldStayInApp(url: Uri): Boolean {
+    // 决策·chat-link-external: 已在 Chat 主界面时,用户手势点开的链接(含兄弟子域/同源非入口路径)
+    // 一律走外部浏览器,不顶掉当前会话页;仅保留主框架重定向(302 去门户)与门户页内登录交互。
+    private fun shouldStayInApp(
+        url: Uri,
+        currentWebViewUrl: String?,
+        request: WebResourceRequest,
+    ): Boolean {
+        val current = currentWebViewUrl?.let { Uri.parse(it) }
+        val onChatMainPage = current != null && isSameOrigin(current) && current.path != "/login.html"
+        if (onChatMainPage && request.isForMainFrame && request.hasGesture()) {
+            return isChatEntryUrl(url)
+        }
         if (isSameOrigin(url)) return true
         val originHost = Uri.parse(AppSettings.origin(this)).host ?: return false
         val urlHost = url.host ?: return false
         val parent = cookieParentDomain(originHost) ?: return false
         return hostInCookieParent(urlHost, parent)
+    }
+
+    private fun isChatEntryUrl(url: Uri): Boolean {
+        if (!isSameOrigin(url)) return false
+        val p = url.path
+        return p.isNullOrEmpty() || p == "/" || p == "/index.html" || p == "/login.html"
     }
 
     private fun cookieParentDomain(host: String): String? {
@@ -336,6 +388,38 @@ class MainActivity : AppCompatActivity() {
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(this, R.string.open_external_failed, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun showLinkContextMenu(url: String) {
+        val items = arrayOf(
+            getString(R.string.link_open_browser),
+            getString(R.string.link_copy_url),
+            getString(R.string.link_share_url),
+        )
+        AlertDialog.Builder(this)
+            .setTitle(url)
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> openInBrowser(Uri.parse(url))
+                    1 -> copyLinkToClipboard(url)
+                    2 -> shareLink(url)
+                }
+            }
+            .show()
+    }
+
+    private fun copyLinkToClipboard(url: String) {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText("url", url))
+        Toast.makeText(this, R.string.link_copied, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun shareLink(url: String) {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, url)
+        }
+        startActivity(Intent.createChooser(intent, null))
     }
 
     inner class CwcNativeBridge {
