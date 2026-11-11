@@ -114,6 +114,7 @@ function renderModelParams() {
   const params = model?.parameters ?? [];
   modelParamsBtn.classList.toggle("show", params.length > 0);
   modelParamsSummaryEl.textContent = modelParamsShortLabel(model);
+  modelParamsSummaryEl.title = modelParamsSummaryEl.textContent;
 }
 
 function openModelParamsModal() {
