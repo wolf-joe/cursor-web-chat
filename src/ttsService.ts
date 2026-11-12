@@ -385,6 +385,7 @@ async function runPipeline(
   agentId: string,
   runId: string,
   emit: (event: TtsSseEvent) => void,
+  directText?: string,
 ): Promise<void> {
   await ensureTtsDir();
   const outPath = ttsCachePath(runId);
@@ -396,7 +397,10 @@ async function runPipeline(
   }
 
   emit({ type: "status", phase: "rewriting" });
-  const sourceText = await extractLastAssistantText(cwd, agentId, runId);
+  const sourceText =
+    typeof directText === "string" && directText.trim()
+      ? directText.trim()
+      : await extractLastAssistantText(cwd, agentId, runId);
   // 决策·side-task-success-one / 决策·log-density: 开始与每句合成不打;
   // 成功落盘后一条汇总(含 durationMs / sentenceCount / bytes)。
   const t0 = Date.now();
@@ -477,6 +481,7 @@ export function streamTts(
   agentId: string,
   runId: string,
   onEvent: (event: TtsSseEvent) => void,
+  directText?: string,
 ): { promise: Promise<void>; unsubscribe: () => void } {
   if (hasTtsCache(runId)) {
     onEvent({ type: "done", cached: true, runId });
@@ -495,7 +500,7 @@ export function streamTts(
         }
       }
     };
-    const promise = runPipeline(cwd, agentId, runId, emit)
+    const promise = runPipeline(cwd, agentId, runId, emit, directText)
       .catch((err) => {
         const message = err instanceof Error ? err.message : String(err);
         log.error("TTS 生成失败", err, { cwd, agentId, runId });

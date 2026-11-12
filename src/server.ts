@@ -686,18 +686,27 @@ app.post("/api/tts/stream", async (req, res) => {
     res.status(503).json({ error: "TTS 未启用(见 config.json tts 段)" });
     return;
   }
-  const { cwd, agentId, runId } = req.body as {
+  const { cwd, agentId, runId, text } = req.body as {
     cwd?: string;
     agentId?: string;
     runId?: string;
+    text?: string;
   };
-  if (!cwd || !agentId || !runId) {
-    res.status(400).json({ error: "缺少 cwd、agentId 或 runId" });
+  const directText = typeof text === "string" ? text.trim() : "";
+  if (!runId || !isSafeRunId(runId)) {
+    res.status(400).json({ error: "缺少或无效的 runId" });
     return;
   }
-  if (!loadFolders().some((f) => f.cwd === cwd)) {
-    res.status(403).json({ error: "cwd 不在已添加的文件夹列表中" });
-    return;
+  // 决策·direct-text-tts: 提供非空 text 时直接合成并按 runId 落盘,跳过本地会话库抽文。
+  if (!directText) {
+    if (!cwd || !agentId) {
+      res.status(400).json({ error: "缺少 cwd、agentId 或 runId" });
+      return;
+    }
+    if (!loadFolders().some((f) => f.cwd === cwd)) {
+      res.status(403).json({ error: "cwd 不在已添加的文件夹列表中" });
+      return;
+    }
   }
 
   res.writeHead(200, {
@@ -712,11 +721,17 @@ app.post("/api/tts/stream", async (req, res) => {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
 
-  const { promise, unsubscribe } = streamTts(cwd, agentId, runId, (event) => {
-    if (res.writableEnded) return;
-    send(event);
-    if (event.type === "done" || event.type === "error") res.end();
-  });
+  const { promise, unsubscribe } = streamTts(
+    cwd ?? "",
+    agentId ?? "",
+    runId,
+    (event) => {
+      if (res.writableEnded) return;
+      send(event);
+      if (event.type === "done" || event.type === "error") res.end();
+    },
+    directText || undefined,
+  );
 
   res.on("close", unsubscribe);
 
